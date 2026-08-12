@@ -1,0 +1,11 @@
+.git
+.env
+node_modules
+web/node_modules
+coverage
+dist
+mdock
+*.db
+*.db-shm
+*.db-wal
+test/tmp

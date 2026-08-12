@@ -1,0 +1,13 @@
+.env
+node_modules/
+web/node_modules/
+webdist/dist/assets/
+dist/
+coverage/
+.playwright-mcp/
+mdock-e2e-dashboard.png
+*.db
+*.db-shm
+*.db-wal
+mdock
+.DS_Store
