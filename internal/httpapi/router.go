@@ -34,11 +34,14 @@ func New(service *app.Service, logger *slog.Logger) (http.Handler, error) {
 
 func (h *Handler) routes() (http.Handler, error) {
 	r := chi.NewRouter()
+	r.Use(h.securityHeaders)
 	r.Get("/healthz", h.health)
-	r.Post("/api/auth/register", h.register)
-	r.Post("/api/auth/login", h.login)
+	r.With(h.limitAPIBody).Post("/api/auth/register", h.register)
+	r.With(h.limitAPIBody).Post("/api/auth/login", h.login)
 	r.Group(func(r chi.Router) {
+		r.Use(h.limitAPIBody)
 		r.Use(h.requireSession)
+		r.Use(h.requireCSRF)
 		r.Get("/api/auth/me", h.me)
 		r.Post("/api/auth/logout", h.logout)
 		r.Post("/api/auth/password", h.changeOwnPassword)
@@ -68,9 +71,10 @@ func (h *Handler) routes() (http.Handler, error) {
 		QueueFor:     h.app.QueueForVault,
 		LockTTL:      h.app.LockTTL(),
 		Logger:       h.logger,
+		AuthLimiter:  h.app.AuthLimiter(),
 	}))
 	for _, method := range []string{http.MethodOptions, "PROPFIND", http.MethodGet, http.MethodHead, http.MethodPut, "MKCOL", http.MethodDelete, "MOVE", "LOCK", "UNLOCK"} {
-		r.Method(method, "/webdav/*", webdavHandler)
+		r.With(h.limitWebDAVBody).Method(method, "/webdav/*", webdavHandler)
 	}
 	r.Mount("/", h.staticHandler())
 	return r, nil

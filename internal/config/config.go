@@ -8,28 +8,36 @@ import (
 )
 
 type Config struct {
-	HTTPAddr          string
-	VaultsRoot        string
-	DataDir           string
-	GitBin            string
-	CommitDebounce    time.Duration
-	LockTTL           time.Duration
-	SessionTTL        time.Duration
-	BootstrapUsername string
-	BootstrapPassword string
-	CookieSecure      bool
+	HTTPAddr              string
+	VaultsRoot            string
+	DataDir               string
+	GitBin                string
+	CommitDebounce        time.Duration
+	LockTTL               time.Duration
+	SessionTTL            time.Duration
+	BootstrapUsername     string
+	BootstrapPassword     string
+	CookieSecure          bool
+	APIBodyLimitBytes     int64
+	WebDAVBodyLimitBytes  int64
+	AuthRateLimitAttempts int
+	AuthRateLimitWindow   time.Duration
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		HTTPAddr:       getEnv("HTTP_ADDR", ":8080"),
-		VaultsRoot:     getEnv("VAULTS_ROOT", "/vaults"),
-		DataDir:        getEnv("DATA_DIR", "/data"),
-		GitBin:         getEnv("GIT_BIN", "git"),
-		CommitDebounce: 5 * time.Second,
-		LockTTL:        30 * time.Second,
-		SessionTTL:     24 * time.Hour,
-		CookieSecure:   getBoolEnv("COOKIE_SECURE", false),
+		HTTPAddr:              getEnv("HTTP_ADDR", ":8080"),
+		VaultsRoot:            getEnv("VAULTS_ROOT", "/vaults"),
+		DataDir:               getEnv("DATA_DIR", "/data"),
+		GitBin:                getEnv("GIT_BIN", "git"),
+		CommitDebounce:        5 * time.Second,
+		LockTTL:               30 * time.Second,
+		SessionTTL:            24 * time.Hour,
+		CookieSecure:          getBoolEnv("COOKIE_SECURE", false),
+		APIBodyLimitBytes:     1 << 20,
+		WebDAVBodyLimitBytes:  50 << 20,
+		AuthRateLimitAttempts: 20,
+		AuthRateLimitWindow:   time.Minute,
 	}
 
 	var err error
@@ -40,6 +48,18 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.SessionTTL, err = getDurationEnv("SESSION_TTL", cfg.SessionTTL); err != nil {
+		return Config{}, err
+	}
+	if cfg.AuthRateLimitWindow, err = getDurationEnv("AUTH_RATE_LIMIT_WINDOW", cfg.AuthRateLimitWindow); err != nil {
+		return Config{}, err
+	}
+	if cfg.APIBodyLimitBytes, err = getInt64Env("API_BODY_LIMIT_BYTES", cfg.APIBodyLimitBytes); err != nil {
+		return Config{}, err
+	}
+	if cfg.WebDAVBodyLimitBytes, err = getInt64Env("WEBDAV_BODY_LIMIT_BYTES", cfg.WebDAVBodyLimitBytes); err != nil {
+		return Config{}, err
+	}
+	if cfg.AuthRateLimitAttempts, err = getIntEnv("AUTH_RATE_LIMIT_ATTEMPTS", cfg.AuthRateLimitAttempts); err != nil {
 		return Config{}, err
 	}
 
@@ -71,6 +91,30 @@ func getDurationEnv(key string, fallback time.Duration) (time.Duration, error) {
 		return fallback, nil
 	}
 	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("parse %s: %w", key, err)
+	}
+	return parsed, nil
+}
+
+func getIntEnv(key string, fallback int) (int, error) {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("parse %s: %w", key, err)
+	}
+	return parsed, nil
+}
+
+func getInt64Env(key string, fallback int64) (int64, error) {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("parse %s: %w", key, err)
 	}

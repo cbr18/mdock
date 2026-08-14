@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -42,6 +43,12 @@ type LockService interface {
 	Release(ctx context.Context, vaultID int64, path, owner string) error
 }
 
+type AuthLimiter interface {
+	Allow(key string) bool
+	RecordFailure(key string)
+	Reset(key string)
+}
+
 type Config struct {
 	Store        Store
 	VaultService VaultService
@@ -49,6 +56,7 @@ type Config struct {
 	QueueFor     func(store.Vault) (*appgit.Queue, error)
 	LockTTL      time.Duration
 	Logger       *slog.Logger
+	AuthLimiter  AuthLimiter
 }
 
 type Handler struct {
@@ -58,6 +66,7 @@ type Handler struct {
 	queueFor     func(store.Vault) (*appgit.Queue, error)
 	lockTTL      time.Duration
 	logger       *slog.Logger
+	authLimiter  AuthLimiter
 }
 
 func NewHandler(cfg Config) http.Handler {
@@ -76,6 +85,7 @@ func NewHandler(cfg Config) http.Handler {
 		queueFor:     cfg.QueueFor,
 		lockTTL:      lockTTL,
 		logger:       logger,
+		authLimiter:  cfg.AuthLimiter,
 	}
 }
 
@@ -135,12 +145,28 @@ type target struct {
 func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request) (target, bool) {
 	username, password, ok := r.BasicAuth()
 	if !ok {
+		rateKey := clientIP(r) + ":webdav:missing"
+		if h.authLimiter != nil && !h.authLimiter.Allow(rateKey) {
+			http.Error(w, "rate limited", http.StatusTooManyRequests)
+			return target{}, false
+		}
+		if h.authLimiter != nil {
+			h.authLimiter.RecordFailure(rateKey)
+		}
 		w.Header().Set("WWW-Authenticate", `Basic realm="mdock"`)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return target{}, false
 	}
+	rateKey := clientIP(r) + ":webdav:" + strings.TrimSpace(username)
+	if h.authLimiter != nil && !h.authLimiter.Allow(rateKey) {
+		http.Error(w, "rate limited", http.StatusTooManyRequests)
+		return target{}, false
+	}
 	user, err := h.store.Authenticate(r.Context(), username, password)
 	if errors.Is(err, store.ErrInvalidCredentials) {
+		if h.authLimiter != nil {
+			h.authLimiter.RecordFailure(rateKey)
+		}
 		w.Header().Set("WWW-Authenticate", `Basic realm="mdock"`)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return target{}, false
@@ -149,6 +175,9 @@ func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request) (target, 
 		h.logger.Error("webdav authenticate", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return target{}, false
+	}
+	if h.authLimiter != nil {
+		h.authLimiter.Reset(rateKey)
 	}
 	slug, rel, err := parsePath(r.URL.Path)
 	if err != nil {
@@ -511,6 +540,17 @@ func (h *Handler) applyCORS(w http.ResponseWriter, r *http.Request) {
 	header.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Depth, Destination, Overwrite, If, Lock-Token, Timeout, Cache-Control, X-Requested-With, X-RS-Test")
 	header.Set("Access-Control-Expose-Headers", "DAV, ETag, Last-Modified, Lock-Token")
 	header.Add("Vary", "Origin")
+}
+
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil && host != "" {
+		return host
+	}
+	if r.RemoteAddr != "" {
+		return r.RemoteAddr
+	}
+	return "unknown"
 }
 
 func allowedOrigin(origin string) bool {

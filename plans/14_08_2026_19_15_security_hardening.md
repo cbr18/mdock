@@ -13,6 +13,10 @@ Task: [14_08_2026_19_15_security_hardening.md](../tasks/14_08_2026_19_15_securit
 ## Проверки
 
 - `go test ./...`
+- `npm test`
+- `docker compose config`
+- `docker compose --env-file test/.env.test.example -f test/docker-compose.yml config`
+- `docker compose --env-file test/.env.test.example -f test/docker-compose.yml up -d --build`
 - `./test/run-smoke.sh`
 
 ## Риски

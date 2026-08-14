@@ -10,6 +10,7 @@ import (
 	"github.com/cbr/mdock/internal/config"
 	appgit "github.com/cbr/mdock/internal/git"
 	"github.com/cbr/mdock/internal/locks"
+	"github.com/cbr/mdock/internal/security"
 	"github.com/cbr/mdock/internal/store"
 	"github.com/cbr/mdock/internal/vault"
 )
@@ -22,6 +23,7 @@ type Service struct {
 	lockService  *locks.Service
 	gitClient    *appgit.Client
 	queues       *appgit.QueueRegistry
+	authLimiter  *security.RateLimiter
 }
 
 type AuthSession struct {
@@ -57,6 +59,7 @@ func New(cfg config.Config, st *store.Store, logger *slog.Logger) (*Service, err
 		lockService:  locks.NewService(st.DB()),
 		gitClient:    gitClient,
 		queues:       appgit.NewQueueRegistry(gitClient, cfg.CommitDebounce),
+		authLimiter:  security.NewRateLimiter(cfg.AuthRateLimitAttempts, cfg.AuthRateLimitWindow),
 	}, nil
 }
 
@@ -78,6 +81,30 @@ func (s *Service) LockTTL() time.Duration {
 
 func (s *Service) CookieSecure() bool {
 	return s.cfg.CookieSecure
+}
+
+func (s *Service) APIBodyLimitBytes() int64 {
+	return s.cfg.APIBodyLimitBytes
+}
+
+func (s *Service) WebDAVBodyLimitBytes() int64 {
+	return s.cfg.WebDAVBodyLimitBytes
+}
+
+func (s *Service) AllowAuthAttempt(key string) bool {
+	return s.authLimiter.Allow(key)
+}
+
+func (s *Service) RecordAuthFailure(key string) {
+	s.authLimiter.RecordFailure(key)
+}
+
+func (s *Service) ResetAuthFailures(key string) {
+	s.authLimiter.Reset(key)
+}
+
+func (s *Service) AuthLimiter() *security.RateLimiter {
+	return s.authLimiter
 }
 
 func (s *Service) Logger() *slog.Logger {

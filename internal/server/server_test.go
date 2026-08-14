@@ -36,6 +36,9 @@ func TestHealthAndLoginFlow(t *testing.T) {
 	if health.Code != http.StatusOK {
 		t.Fatalf("health status = %d", health.Code)
 	}
+	if health.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("missing security header X-Content-Type-Options: %q", health.Header().Get("X-Content-Type-Options"))
+	}
 
 	body, _ := json.Marshal(map[string]string{"username": "admin", "password": "secret"})
 	login := httptest.NewRecorder()
@@ -51,7 +54,7 @@ func TestHealthAndLoginFlow(t *testing.T) {
 
 	me := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
-	req.AddCookie(cookies[0])
+	addSessionAuth(req, cookies)
 	srv.Handler().ServeHTTP(me, req)
 	if me.Code != http.StatusOK {
 		t.Fatalf("me status = %d body=%s", me.Code, me.Body.String())
@@ -62,7 +65,7 @@ func TestHealthAndLoginFlow(t *testing.T) {
 
 	vaults := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/vaults", nil)
-	req.AddCookie(cookies[0])
+	addSessionAuth(req, cookies)
 	srv.Handler().ServeHTTP(vaults, req)
 	if vaults.Code != http.StatusOK {
 		t.Fatalf("vaults status = %d body=%s", vaults.Code, vaults.Body.String())
@@ -84,7 +87,7 @@ func TestAdminUserManagementAPI(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	adminCookie := loginCookie(t, srv, "admin", "secret")
+	adminCookies := loginCookies(t, srv, "admin", "secret")
 	body, _ := json.Marshal(map[string]string{"username": "alice", "password": "old"})
 	register := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(body))
@@ -92,11 +95,11 @@ func TestAdminUserManagementAPI(t *testing.T) {
 	if register.Code != http.StatusCreated {
 		t.Fatalf("register status = %d body=%s", register.Code, register.Body.String())
 	}
-	aliceCookie := register.Result().Cookies()[0]
+	aliceCookies := register.Result().Cookies()
 
 	forbidden := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/admin/users", nil)
-	req.AddCookie(aliceCookie)
+	addSessionAuth(req, aliceCookies)
 	srv.Handler().ServeHTTP(forbidden, req)
 	if forbidden.Code != http.StatusForbidden {
 		t.Fatalf("non-admin users status = %d body=%s", forbidden.Code, forbidden.Body.String())
@@ -104,7 +107,7 @@ func TestAdminUserManagementAPI(t *testing.T) {
 
 	users := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/admin/users", nil)
-	req.AddCookie(adminCookie)
+	addSessionAuth(req, adminCookies)
 	srv.Handler().ServeHTTP(users, req)
 	if users.Code != http.StatusOK {
 		t.Fatalf("admin users status = %d body=%s", users.Code, users.Body.String())
@@ -116,14 +119,14 @@ func TestAdminUserManagementAPI(t *testing.T) {
 	changeOwn := httptest.NewRecorder()
 	body, _ = json.Marshal(map[string]string{"current_password": "old", "new_password": "new"})
 	req = httptest.NewRequest(http.MethodPost, "/api/auth/password", bytes.NewReader(body))
-	req.AddCookie(aliceCookie)
+	addSessionAuth(req, aliceCookies)
 	srv.Handler().ServeHTTP(changeOwn, req)
 	if changeOwn.Code != http.StatusOK {
 		t.Fatalf("change own password status = %d body=%s", changeOwn.Code, changeOwn.Body.String())
 	}
 	oldSession := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
-	req.AddCookie(aliceCookie)
+	addSessionAuth(req, aliceCookies)
 	srv.Handler().ServeHTTP(oldSession, req)
 	if oldSession.Code != http.StatusUnauthorized {
 		t.Fatalf("old session after password change status = %d body=%s", oldSession.Code, oldSession.Body.String())
@@ -137,7 +140,7 @@ func TestAdminUserManagementAPI(t *testing.T) {
 
 	disable := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/admin/users/alice/disable", nil)
-	req.AddCookie(adminCookie)
+	addSessionAuth(req, adminCookies)
 	srv.Handler().ServeHTTP(disable, req)
 	if disable.Code != http.StatusOK {
 		t.Fatalf("disable status = %d body=%s", disable.Code, disable.Body.String())
@@ -148,7 +151,7 @@ func TestAdminUserManagementAPI(t *testing.T) {
 
 	enable := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/admin/users/alice/enable", nil)
-	req.AddCookie(adminCookie)
+	addSessionAuth(req, adminCookies)
 	srv.Handler().ServeHTTP(enable, req)
 	if enable.Code != http.StatusOK {
 		t.Fatalf("enable status = %d body=%s", enable.Code, enable.Body.String())
@@ -160,7 +163,7 @@ func TestAdminUserManagementAPI(t *testing.T) {
 	reset := httptest.NewRecorder()
 	body, _ = json.Marshal(map[string]string{"password": "admin-reset"})
 	req = httptest.NewRequest(http.MethodPost, "/api/admin/users/alice/password", bytes.NewReader(body))
-	req.AddCookie(adminCookie)
+	addSessionAuth(req, adminCookies)
 	srv.Handler().ServeHTTP(reset, req)
 	if reset.Code != http.StatusOK {
 		t.Fatalf("admin reset password status = %d body=%s", reset.Code, reset.Body.String())
@@ -169,17 +172,17 @@ func TestAdminUserManagementAPI(t *testing.T) {
 		t.Fatal("admin-reset password does not work")
 	}
 
-	revokeCookie := loginCookie(t, srv, "alice", "admin-reset")
+	revokeCookies := loginCookies(t, srv, "alice", "admin-reset")
 	revoke := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/admin/users/alice/sessions/revoke", nil)
-	req.AddCookie(adminCookie)
+	addSessionAuth(req, adminCookies)
 	srv.Handler().ServeHTTP(revoke, req)
 	if revoke.Code != http.StatusOK {
 		t.Fatalf("revoke sessions status = %d body=%s", revoke.Code, revoke.Body.String())
 	}
 	me := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
-	req.AddCookie(revokeCookie)
+	addSessionAuth(req, revokeCookies)
 	srv.Handler().ServeHTTP(me, req)
 	if me.Code != http.StatusUnauthorized {
 		t.Fatalf("revoked session me status = %d body=%s", me.Code, me.Body.String())
@@ -216,10 +219,21 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 		t.Fatal("expected session cookie")
 	}
 
-	createBody, _ := json.Marshal(map[string]string{"name": "Work Notes"})
+	noCSRF := httptest.NewRecorder()
+	createBody, _ := json.Marshal(map[string]string{"name": "No CSRF"})
+	req = httptest.NewRequest(http.MethodPost, "/api/vaults", bytes.NewReader(createBody))
+	for _, cookie := range cookies {
+		req.AddCookie(cookie)
+	}
+	srv.Handler().ServeHTTP(noCSRF, req)
+	if noCSRF.Code != http.StatusForbidden {
+		t.Fatalf("missing csrf create vault status = %d body=%s", noCSRF.Code, noCSRF.Body.String())
+	}
+
+	createBody, _ = json.Marshal(map[string]string{"name": "Work Notes"})
 	create := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/vaults", bytes.NewReader(createBody))
-	req.AddCookie(cookies[0])
+	addSessionAuth(req, cookies)
 	srv.Handler().ServeHTTP(create, req)
 	if create.Code != http.StatusCreated {
 		t.Fatalf("create vault status = %d body=%s", create.Code, create.Body.String())
@@ -238,7 +252,7 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes", nil)
 	req.Host = "notes.example.test"
 	req.Header.Set("X-Forwarded-Proto", "https")
-	req.AddCookie(cookies[0])
+	addSessionAuth(req, cookies)
 	srv.Handler().ServeHTTP(detail, req)
 	if detail.Code != http.StatusOK {
 		t.Fatalf("vault detail status = %d body=%s", detail.Code, detail.Body.String())
@@ -250,7 +264,7 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	renameBody, _ := json.Marshal(map[string]string{"name": "Renamed Notes"})
 	rename := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPatch, "/api/vaults/work-notes", bytes.NewReader(renameBody))
-	req.AddCookie(cookies[0])
+	addSessionAuth(req, cookies)
 	srv.Handler().ServeHTTP(rename, req)
 	if rename.Code != http.StatusOK {
 		t.Fatalf("rename vault status = %d body=%s", rename.Code, rename.Body.String())
@@ -261,7 +275,7 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 
 	members := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/members", nil)
-	req.AddCookie(cookies[0])
+	addSessionAuth(req, cookies)
 	srv.Handler().ServeHTTP(members, req)
 	if members.Code != http.StatusOK {
 		t.Fatalf("vault members status = %d body=%s", members.Code, members.Body.String())
@@ -301,7 +315,7 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 
 	status := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/git/status", nil)
-	req.AddCookie(cookies[0])
+	addSessionAuth(req, cookies)
 	srv.Handler().ServeHTTP(status, req)
 	if status.Code != http.StatusOK {
 		t.Fatalf("git status code = %d body=%s", status.Code, status.Body.String())
@@ -319,7 +333,7 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 
 	commits := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/git/commits?limit=5", nil)
-	req.AddCookie(cookies[0])
+	addSessionAuth(req, cookies)
 	srv.Handler().ServeHTTP(commits, req)
 	if commits.Code != http.StatusOK {
 		t.Fatalf("git commits code = %d body=%s", commits.Code, commits.Body.String())
@@ -330,7 +344,7 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 
 	archive := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/archive", nil)
-	req.AddCookie(cookies[0])
+	addSessionAuth(req, cookies)
 	srv.Handler().ServeHTTP(archive, req)
 	if archive.Code != http.StatusOK {
 		t.Fatalf("archive vault status = %d body=%s", archive.Code, archive.Body.String())
@@ -340,7 +354,7 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	}
 	archivedList := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/vaults", nil)
-	req.AddCookie(cookies[0])
+	addSessionAuth(req, cookies)
 	srv.Handler().ServeHTTP(archivedList, req)
 	if archivedList.Code != http.StatusOK {
 		t.Fatalf("archived list status = %d body=%s", archivedList.Code, archivedList.Body.String())
@@ -357,14 +371,14 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	}
 	archivedDetail := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes", nil)
-	req.AddCookie(cookies[0])
+	addSessionAuth(req, cookies)
 	srv.Handler().ServeHTTP(archivedDetail, req)
 	if archivedDetail.Code != http.StatusOK || !strings.Contains(archivedDetail.Body.String(), `"archived":true`) {
 		t.Fatalf("archived detail status = %d body=%s", archivedDetail.Code, archivedDetail.Body.String())
 	}
 	unarchive := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/unarchive", nil)
-	req.AddCookie(cookies[0])
+	addSessionAuth(req, cookies)
 	srv.Handler().ServeHTTP(unarchive, req)
 	if unarchive.Code != http.StatusOK {
 		t.Fatalf("unarchive vault status = %d body=%s", unarchive.Code, unarchive.Body.String())
@@ -383,21 +397,62 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	otherCookies := otherRegister.Result().Cookies()
 	hidden := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/git/status", nil)
-	req.AddCookie(otherCookies[0])
+	addSessionAuth(req, otherCookies)
 	srv.Handler().ServeHTTP(hidden, req)
 	if hidden.Code != http.StatusNotFound {
 		t.Fatalf("other user git status code = %d body=%s", hidden.Code, hidden.Body.String())
 	}
 	hiddenDetail := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes", nil)
-	req.AddCookie(otherCookies[0])
+	addSessionAuth(req, otherCookies)
 	srv.Handler().ServeHTTP(hiddenDetail, req)
 	if hiddenDetail.Code != http.StatusNotFound {
 		t.Fatalf("other user vault detail code = %d body=%s", hiddenDetail.Code, hiddenDetail.Body.String())
 	}
 }
 
-func loginCookie(t *testing.T, srv *Server, username, password string) *http.Cookie {
+func TestSecurityMiddlewareAndRateLimit(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer st.Close()
+	srv, err := New(config.Config{SessionTTL: time.Hour, APIBodyLimitBytes: 8, AuthRateLimitAttempts: 20, AuthRateLimitWindow: time.Hour}, st, slog.Default())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	tooLarge := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(`{"username":"large","password":"too-large"}`))
+	srv.Handler().ServeHTTP(tooLarge, req)
+	if tooLarge.Code >= 200 && tooLarge.Code < 300 {
+		t.Fatalf("oversized body status = %d body=%s", tooLarge.Code, tooLarge.Body.String())
+	}
+
+	rateStore, err := store.Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatalf("Open(rate) error = %v", err)
+	}
+	defer rateStore.Close()
+	if err := rateStore.BootstrapUser(ctx, "admin", "secret"); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+	rateSrv, err := New(config.Config{SessionTTL: time.Hour, AuthRateLimitAttempts: 2, AuthRateLimitWindow: time.Hour}, rateStore, slog.Default())
+	if err != nil {
+		t.Fatalf("New(rate) error = %v", err)
+	}
+	if loginStatus(t, rateSrv, "admin", "wrong") != http.StatusUnauthorized {
+		t.Fatal("first bad login should be unauthorized")
+	}
+	if loginStatus(t, rateSrv, "admin", "wrong") != http.StatusUnauthorized {
+		t.Fatal("second bad login should be unauthorized")
+	}
+	if loginStatus(t, rateSrv, "admin", "wrong") != http.StatusTooManyRequests {
+		t.Fatal("third bad login should be rate limited")
+	}
+}
+
+func loginCookies(t *testing.T, srv *Server, username, password string) []*http.Cookie {
 	t.Helper()
 	body, _ := json.Marshal(map[string]string{"username": username, "password": password})
 	login := httptest.NewRecorder()
@@ -410,7 +465,16 @@ func loginCookie(t *testing.T, srv *Server, username, password string) *http.Coo
 	if len(cookies) == 0 {
 		t.Fatalf("login %s returned no cookies", username)
 	}
-	return cookies[0]
+	return cookies
+}
+
+func addSessionAuth(req *http.Request, cookies []*http.Cookie) {
+	for _, cookie := range cookies {
+		req.AddCookie(cookie)
+		if cookie.Name == "mdock_csrf" {
+			req.Header.Set("X-CSRF-Token", cookie.Value)
+		}
+	}
 }
 
 func loginStatus(t *testing.T, srv *Server, username, password string) int {

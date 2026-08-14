@@ -378,6 +378,7 @@ func requireStatus(t *testing.T, client *http.Client, method, url string, body *
 	}
 	if method == http.MethodPost || method == http.MethodPatch {
 		req.Header.Set("Content-Type", "application/json")
+		addCSRFHeader(client, req)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -405,6 +406,7 @@ func requireOK(t *testing.T, client *http.Client, method, url string, body *byte
 	}
 	if method == http.MethodPost || method == http.MethodPatch {
 		req.Header.Set("Content-Type", "application/json")
+		addCSRFHeader(client, req)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -419,6 +421,21 @@ func requireOK(t *testing.T, client *http.Client, method, url string, body *byte
 		t.Fatalf("%s %s status = %d body=%s", method, url, resp.StatusCode, string(data))
 	}
 	return data
+}
+
+func addCSRFHeader(client *http.Client, req *http.Request) {
+	if client.Jar == nil {
+		return
+	}
+	if req.Method == http.MethodGet || req.Method == http.MethodHead || req.Method == http.MethodOptions {
+		return
+	}
+	for _, cookie := range client.Jar.Cookies(req.URL) {
+		if cookie.Name == "mdock_csrf" && cookie.Value != "" {
+			req.Header.Set("X-CSRF-Token", cookie.Value)
+			return
+		}
+	}
 }
 
 func requireWebDAV(t *testing.T, client *http.Client, method, url, username, password string, body io.Reader, status int, contains string) []byte {

@@ -2,10 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Copy, Database, LogOut, Plus, ShieldCheck } from 'lucide-react';
 
 async function api(path, options = {}) {
+  const method = options.method || 'GET';
+  const csrfToken = method === 'GET' || method === 'HEAD' ? '' : getCookie('mdock_csrf');
   const response = await fetch(path, {
     credentials: 'same-origin',
     headers: {
       'Content-Type': 'application/json',
+      ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
       ...(options.headers || {})
     },
     ...options
@@ -21,6 +24,15 @@ async function api(path, options = {}) {
     throw error;
   }
   return payload;
+}
+
+function getCookie(name) {
+  return document.cookie
+    .split('; ')
+    .find((row) => row.startsWith(`${name}=`))
+    ?.split('=')
+    .slice(1)
+    .join('=') || '';
 }
 
 export default function App() {

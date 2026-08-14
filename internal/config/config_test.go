@@ -12,6 +12,10 @@ func TestLoadDefaultsAndDurations(t *testing.T) {
 	t.Setenv("COMMIT_DEBOUNCE", "2s")
 	t.Setenv("LOCK_TTL", "45s")
 	t.Setenv("SESSION_TTL", "1h")
+	t.Setenv("API_BODY_LIMIT_BYTES", "2048")
+	t.Setenv("WEBDAV_BODY_LIMIT_BYTES", "4096")
+	t.Setenv("AUTH_RATE_LIMIT_ATTEMPTS", "7")
+	t.Setenv("AUTH_RATE_LIMIT_WINDOW", "3m")
 	t.Setenv("BOOTSTRAP_USERNAME", "admin")
 	t.Setenv("BOOTSTRAP_PASSWORD", "secret")
 
@@ -25,6 +29,9 @@ func TestLoadDefaultsAndDurations(t *testing.T) {
 	}
 	if cfg.CommitDebounce != 2*time.Second || cfg.LockTTL != 45*time.Second || cfg.SessionTTL != time.Hour {
 		t.Fatalf("unexpected durations: %+v", cfg)
+	}
+	if cfg.APIBodyLimitBytes != 2048 || cfg.WebDAVBodyLimitBytes != 4096 || cfg.AuthRateLimitAttempts != 7 || cfg.AuthRateLimitWindow != 3*time.Minute {
+		t.Fatalf("unexpected security limits: %+v", cfg)
 	}
 	if err := cfg.ValidateBootstrap(); err != nil {
 		t.Fatalf("ValidateBootstrap() error = %v", err)

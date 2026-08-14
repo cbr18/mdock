@@ -81,6 +81,14 @@ docker compose up -d --build
 ```
 
 The root `docker-compose.yml` is the production stack. It mounts separate volumes for `/vaults` and `/data`.
+Security-related limits can be configured through env:
+
+```text
+API_BODY_LIMIT_BYTES=1048576
+WEBDAV_BODY_LIMIT_BYTES=52428800
+AUTH_RATE_LIMIT_ATTEMPTS=20
+AUTH_RATE_LIMIT_WINDOW=1m
+```
 
 ## Test Stack
 
