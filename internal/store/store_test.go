@@ -52,8 +52,11 @@ func TestStoreBootstrapAuthenticateAndSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PersonalVault() error = %v", err)
 	}
-	if vault.Slug != "admin" || vault.Kind != VaultKindPersonal || vault.Role != RoleOwner {
+	if vault.Name != "admin" || vault.Slug != "admin" || vault.Kind != VaultKindPersonal || vault.Role != RoleOwner {
 		t.Fatalf("unexpected personal vault: %+v", vault)
+	}
+	if vault.Path == "admin" || vault.Path == "" {
+		t.Fatalf("personal vault path = %q, want stable technical path", vault.Path)
 	}
 }
 
@@ -103,8 +106,11 @@ func TestCreateUserAndVaultSlugCollision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateUser() error = %v", err)
 	}
-	if personal.Slug != "alice" || personal.Kind != VaultKindPersonal {
+	if personal.Name != "alice" || personal.Slug != "alice" || personal.Kind != VaultKindPersonal {
 		t.Fatalf("unexpected personal vault: %+v", personal)
+	}
+	if personal.Path == "alice" || personal.Path == "" {
+		t.Fatalf("personal vault path = %q, want stable technical path", personal.Path)
 	}
 	if _, _, err := s.CreateUser(ctx, "alice", "secret"); err != ErrUserExists {
 		t.Fatalf("CreateUser(duplicate) error = %v", err)
@@ -119,6 +125,12 @@ func TestCreateUserAndVaultSlugCollision(t *testing.T) {
 	}
 	if first.Slug != "team-notes" || second.Slug != "team-notes-2" {
 		t.Fatalf("unexpected slugs: %q %q", first.Slug, second.Slug)
+	}
+	if first.Name != "Team Notes" || second.Name != "Team Notes" {
+		t.Fatalf("unexpected names: %q %q", first.Name, second.Name)
+	}
+	if first.Path == first.Slug || second.Path == second.Slug || first.Path == second.Path {
+		t.Fatalf("unexpected paths: %q %q", first.Path, second.Path)
 	}
 	got, err := s.VaultForUserBySlug(ctx, user.ID, "team-notes")
 	if err != nil {

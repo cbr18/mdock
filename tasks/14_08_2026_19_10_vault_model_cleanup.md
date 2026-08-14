@@ -1,6 +1,6 @@
 # Vault model cleanup
 
-Status: CREATED
+Status: DONE
 Created: 2026-08-14 19:10
 Project: mdock
 Plan: [14_08_2026_19_10_vault_model_cleanup.md](../plans/14_08_2026_19_10_vault_model_cleanup.md)
@@ -67,7 +67,15 @@ Personal vault сейчас создаётся со `slug/path`, завязан�
 
 ## Результаты валидации
 
-- Пока не выполнялось.
+- `go test ./...` — успешно.
+- `npm test` из `web/` — успешно, `2` теста.
+- `docker compose --env-file test/.env.test.example -f test/docker-compose.yml up -d --build` — успешно.
+- `./test/run-smoke.sh` — успешно, включая Remotely Save compatibility matrix.
+- Логи test stack проверены фильтром по `database is locked`, `level=ERROR`, `status=5xx`, `panic`, `Authorization`, `Basic`, `password`, `Cookie`, `Set-Cookie` — совпадений нет.
+- `vaults.name` добавлен с backfill `name = slug` для существующих rows.
+- Новые vaults получают stable technical `path = vault-<id>`.
+- Existing vault paths не переименовываются.
+- API/smoke проверяет `name` и что новые vault paths отличаются от slug.
 
 ## Откат
 

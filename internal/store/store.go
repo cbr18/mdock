@@ -28,6 +28,7 @@ type User struct {
 
 type Vault struct {
 	ID        int64  `json:"id"`
+	Name      string `json:"name"`
 	Slug      string `json:"slug"`
 	Kind      string `json:"kind"`
 	Path      string `json:"path"`
@@ -83,11 +84,14 @@ func (s *Store) init(ctx context.Context) error {
 		);`,
 		`CREATE TABLE IF NOT EXISTS vaults (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL DEFAULT '',
 			slug TEXT NOT NULL UNIQUE,
 			kind TEXT NOT NULL,
 			path TEXT NOT NULL UNIQUE,
 			created_at TEXT NOT NULL
 		);`,
+		`ALTER TABLE vaults ADD COLUMN name TEXT NOT NULL DEFAULT '';`,
+		`UPDATE vaults SET name = slug WHERE name = '';`,
 		`CREATE TABLE IF NOT EXISTS vault_members (
 			vault_id INTEGER NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
 			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -114,6 +118,9 @@ func (s *Store) init(ctx context.Context) error {
 	}
 	for _, stmt := range statements {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+			if strings.Contains(stmt, "ALTER TABLE vaults ADD COLUMN name") && strings.Contains(err.Error(), "duplicate column") {
+				continue
+			}
 			return fmt.Errorf("initialize sqlite: %w", err)
 		}
 	}
@@ -229,13 +236,13 @@ func (s *Store) CreateVaultForUser(ctx context.Context, userID int64, name, kind
 func (s *Store) PersonalVault(ctx context.Context, userID int64) (Vault, error) {
 	var vault Vault
 	err := s.db.QueryRowContext(ctx, `
-		SELECT vaults.id, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.created_at
+		SELECT vaults.id, vaults.name, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.created_at
 		FROM vaults
 		JOIN vault_members ON vault_members.vault_id = vaults.id
 		WHERE vault_members.user_id = ? AND vaults.kind = ?
 		ORDER BY vaults.id
 		LIMIT 1
-	`, userID, VaultKindPersonal).Scan(&vault.ID, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.CreatedAt)
+	`, userID, VaultKindPersonal).Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.CreatedAt)
 	if err != nil {
 		return Vault{}, err
 	}
@@ -245,12 +252,12 @@ func (s *Store) PersonalVault(ctx context.Context, userID int64) (Vault, error) 
 func (s *Store) VaultForUserBySlug(ctx context.Context, userID int64, slug string) (Vault, error) {
 	var vault Vault
 	err := s.db.QueryRowContext(ctx, `
-		SELECT vaults.id, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.created_at
+		SELECT vaults.id, vaults.name, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.created_at
 		FROM vaults
 		JOIN vault_members ON vault_members.vault_id = vaults.id
 		WHERE vault_members.user_id = ? AND vaults.slug = ?
 		LIMIT 1
-	`, userID, slug).Scan(&vault.ID, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.CreatedAt)
+	`, userID, slug).Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.CreatedAt)
 	if err != nil {
 		return Vault{}, err
 	}
@@ -259,7 +266,7 @@ func (s *Store) VaultForUserBySlug(ctx context.Context, userID int64, slug strin
 
 func (s *Store) ListVaultsForUser(ctx context.Context, userID int64) ([]Vault, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT vaults.id, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.created_at
+		SELECT vaults.id, vaults.name, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.created_at
 		FROM vaults
 		JOIN vault_members ON vault_members.vault_id = vaults.id
 		WHERE vault_members.user_id = ?
@@ -272,7 +279,7 @@ func (s *Store) ListVaultsForUser(ctx context.Context, userID int64) ([]Vault, e
 	var vaults []Vault
 	for rows.Next() {
 		var vault Vault
-		if err := rows.Scan(&vault.ID, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.CreatedAt); err != nil {
+		if err := rows.Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan vault: %w", err)
 		}
 		vaults = append(vaults, vault)
@@ -284,7 +291,7 @@ func (s *Store) ListVaultsForUser(ctx context.Context, userID int64) ([]Vault, e
 }
 
 func (s *Store) ListVaults(ctx context.Context) ([]Vault, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, slug, kind, path, created_at FROM vaults ORDER BY slug`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, slug, kind, path, created_at FROM vaults ORDER BY slug`)
 	if err != nil {
 		return nil, fmt.Errorf("list all vaults: %w", err)
 	}
@@ -292,7 +299,7 @@ func (s *Store) ListVaults(ctx context.Context) ([]Vault, error) {
 	var vaults []Vault
 	for rows.Next() {
 		var vault Vault
-		if err := rows.Scan(&vault.ID, &vault.Slug, &vault.Kind, &vault.Path, &vault.CreatedAt); err != nil {
+		if err := rows.Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan vault: %w", err)
 		}
 		vaults = append(vaults, vault)
@@ -414,6 +421,10 @@ func Slug(input string) string {
 }
 
 func (s *Store) createVaultForUserTx(ctx context.Context, tx *sql.Tx, userID int64, name, kind string) (Vault, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Vault{}, fmt.Errorf("vault name is required")
+	}
 	base := Slug(name)
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	for i := 0; i < 100; i++ {
@@ -421,7 +432,7 @@ func (s *Store) createVaultForUserTx(ctx context.Context, tx *sql.Tx, userID int
 		if i > 0 {
 			slug = fmt.Sprintf("%s-%d", base, i+1)
 		}
-		res, err := tx.ExecContext(ctx, `INSERT INTO vaults (slug, kind, path, created_at) VALUES (?, ?, ?, ?)`, slug, kind, slug, now)
+		res, err := tx.ExecContext(ctx, `INSERT INTO vaults (name, slug, kind, path, created_at) VALUES (?, ?, ?, ?, ?)`, name, slug, kind, pendingVaultPath(slug), now)
 		if err != nil {
 			if strings.Contains(err.Error(), "constraint failed") || strings.Contains(err.Error(), "UNIQUE constraint failed") {
 				continue
@@ -435,7 +446,15 @@ func (s *Store) createVaultForUserTx(ctx context.Context, tx *sql.Tx, userID int
 		if _, err := tx.ExecContext(ctx, `INSERT INTO vault_members (vault_id, user_id, role, created_at) VALUES (?, ?, ?, ?)`, vaultID, userID, RoleOwner, now); err != nil {
 			return Vault{}, fmt.Errorf("insert vault membership: %w", err)
 		}
-		return Vault{ID: vaultID, Slug: slug, Kind: kind, Path: slug, Role: RoleOwner, CreatedAt: now}, nil
+		path := fmt.Sprintf("vault-%d", vaultID)
+		if _, err := tx.ExecContext(ctx, `UPDATE vaults SET path = ? WHERE id = ?`, path, vaultID); err != nil {
+			return Vault{}, fmt.Errorf("update vault path: %w", err)
+		}
+		return Vault{ID: vaultID, Name: name, Slug: slug, Kind: kind, Path: path, Role: RoleOwner, CreatedAt: now}, nil
 	}
 	return Vault{}, fmt.Errorf("unique vault slug not available")
+}
+
+func pendingVaultPath(slug string) string {
+	return "__pending__-" + slug
 }

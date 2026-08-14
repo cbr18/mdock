@@ -36,8 +36,10 @@ func TestRunningTestStack(t *testing.T) {
 	body := requireOK(t, client, http.MethodGet, baseURL+"/api/vaults", nil)
 	var response struct {
 		Vaults []struct {
+			Name string `json:"name"`
 			Slug string `json:"slug"`
 			Kind string `json:"kind"`
+			Path string `json:"path"`
 			Role string `json:"role"`
 		} `json:"vaults"`
 	}
@@ -47,7 +49,7 @@ func TestRunningTestStack(t *testing.T) {
 	if len(response.Vaults) != 1 {
 		t.Fatalf("vault count = %d, want 1", len(response.Vaults))
 	}
-	if response.Vaults[0].Slug != username || response.Vaults[0].Kind != "personal" || response.Vaults[0].Role != "owner" {
+	if response.Vaults[0].Name != username || response.Vaults[0].Slug != username || response.Vaults[0].Kind != "personal" || response.Vaults[0].Role != "owner" {
 		t.Fatalf("unexpected personal vault: %+v", response.Vaults[0])
 	}
 
@@ -57,7 +59,9 @@ func TestRunningTestStack(t *testing.T) {
 	body = requireOK(t, client, http.MethodPost, baseURL+"/api/auth/register", bytes.NewReader(payload))
 	var registerResponse struct {
 		Vault struct {
+			Name string `json:"name"`
 			Slug string `json:"slug"`
+			Path string `json:"path"`
 		} `json:"vault"`
 	}
 	if err := json.Unmarshal(body, &registerResponse); err != nil {
@@ -66,12 +70,20 @@ func TestRunningTestStack(t *testing.T) {
 	if registerResponse.Vault.Slug == "" {
 		t.Fatal("registered personal vault slug is empty")
 	}
+	if registerResponse.Vault.Name != smokeUsername {
+		t.Fatalf("registered personal vault name = %q, want %q", registerResponse.Vault.Name, smokeUsername)
+	}
+	if registerResponse.Vault.Path == "" || registerResponse.Vault.Path == registerResponse.Vault.Slug {
+		t.Fatalf("registered personal vault path = %q, want stable technical path different from slug %q", registerResponse.Vault.Path, registerResponse.Vault.Slug)
+	}
 
 	payload, _ = json.Marshal(map[string]string{"name": "Obsidian Vault"})
 	body = requireOK(t, client, http.MethodPost, baseURL+"/api/vaults", bytes.NewReader(payload))
 	var createResponse struct {
 		Vault struct {
+			Name string `json:"name"`
 			Slug string `json:"slug"`
+			Path string `json:"path"`
 		} `json:"vault"`
 	}
 	if err := json.Unmarshal(body, &createResponse); err != nil {
@@ -79,6 +91,12 @@ func TestRunningTestStack(t *testing.T) {
 	}
 	if createResponse.Vault.Slug == "" {
 		t.Fatal("created vault slug is empty")
+	}
+	if createResponse.Vault.Name != "Obsidian Vault" {
+		t.Fatalf("created vault name = %q, want Obsidian Vault", createResponse.Vault.Name)
+	}
+	if createResponse.Vault.Path == "" || createResponse.Vault.Path == createResponse.Vault.Slug {
+		t.Fatalf("created vault path = %q, want stable technical path different from slug %q", createResponse.Vault.Path, createResponse.Vault.Slug)
 	}
 
 	webdavBase := baseURL + "/webdav/" + createResponse.Vault.Slug
