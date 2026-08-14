@@ -116,6 +116,47 @@ func (s *Service) ValidateSession(ctx context.Context, sessionID string) (store.
 	return s.store.ValidateSession(ctx, sessionID)
 }
 
+func (s *Service) ChangeOwnPassword(ctx context.Context, user store.User, currentPassword, newPassword string) error {
+	if _, err := s.store.Authenticate(ctx, user.Login, currentPassword); err != nil {
+		return err
+	}
+	if err := s.store.SetPassword(ctx, user.Login, newPassword); err != nil {
+		return err
+	}
+	return s.store.DeleteSessionsForLogin(ctx, user.Login)
+}
+
+func (s *Service) ListUsers(ctx context.Context) ([]store.User, error) {
+	return s.store.ListUsers(ctx)
+}
+
+func (s *Service) SetUserPassword(ctx context.Context, login, password string) error {
+	if err := s.store.SetPassword(ctx, login, password); err != nil {
+		return err
+	}
+	return s.store.DeleteSessionsForLogin(ctx, login)
+}
+
+func (s *Service) SetUserDisabled(ctx context.Context, login string, disabled bool) error {
+	if _, err := s.store.GetUserByLogin(ctx, login); err != nil {
+		return err
+	}
+	if err := s.store.SetUserDisabled(ctx, login, disabled); err != nil {
+		return err
+	}
+	if disabled {
+		return s.store.DeleteSessionsForLogin(ctx, login)
+	}
+	return nil
+}
+
+func (s *Service) RevokeUserSessions(ctx context.Context, login string) error {
+	if _, err := s.store.GetUserByLogin(ctx, login); err != nil {
+		return err
+	}
+	return s.store.DeleteSessionsForLogin(ctx, login)
+}
+
 func (s *Service) ListVaults(ctx context.Context, userID int64) ([]store.Vault, error) {
 	return s.store.ListVaultsForUser(ctx, userID)
 }

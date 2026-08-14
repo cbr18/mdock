@@ -29,6 +29,17 @@ func (h *Handler) requireSession(next http.Handler) http.Handler {
 	})
 }
 
+func (h *Handler) requireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := userFromContext(r.Context())
+		if !user.IsAdmin {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 type contextKey string
 
 const userContextKey contextKey = "user"

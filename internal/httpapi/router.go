@@ -41,10 +41,19 @@ func (h *Handler) routes() (http.Handler, error) {
 		r.Use(h.requireSession)
 		r.Get("/api/auth/me", h.me)
 		r.Post("/api/auth/logout", h.logout)
+		r.Post("/api/auth/password", h.changeOwnPassword)
 		r.Get("/api/vaults", h.vaults)
 		r.Post("/api/vaults", h.createVault)
 		r.Get("/api/vaults/{slug}/git/status", h.gitStatus)
 		r.Get("/api/vaults/{slug}/git/commits", h.gitCommits)
+		r.Group(func(r chi.Router) {
+			r.Use(h.requireAdmin)
+			r.Get("/api/admin/users", h.adminUsers)
+			r.Post("/api/admin/users/{login}/password", h.adminSetPassword)
+			r.Post("/api/admin/users/{login}/disable", h.adminDisableUser)
+			r.Post("/api/admin/users/{login}/enable", h.adminEnableUser)
+			r.Post("/api/admin/users/{login}/sessions/revoke", h.adminRevokeSessions)
+		})
 	})
 	webdavHandler := http.StripPrefix("/webdav", appwebdav.NewHandler(appwebdav.Config{
 		Store:        h.app.Store(),

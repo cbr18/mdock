@@ -14,6 +14,11 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
 func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -56,7 +61,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 	user := userFromContext(r.Context())
-	writeJSON(w, http.StatusOK, map[string]string{"username": user.Login})
+	writeJSON(w, http.StatusOK, map[string]any{"username": user.Login, "is_admin": user.IsAdmin})
 }
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
@@ -76,6 +81,29 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		Secure:   h.app.CookieSecure(),
 	})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) changeOwnPassword(w http.ResponseWriter, r *http.Request) {
+	var req changePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
+		return
+	}
+	if req.CurrentPassword == "" || req.NewPassword == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password_required"})
+		return
+	}
+	user := userFromContext(r.Context())
+	if err := h.app.ChangeOwnPassword(r.Context(), user, req.CurrentPassword, req.NewPassword); err != nil {
+		if errors.Is(err, store.ErrInvalidCredentials) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_credentials"})
+			return
+		}
+		h.logger.Error("change own password", "error", err, "user_id", user.ID)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

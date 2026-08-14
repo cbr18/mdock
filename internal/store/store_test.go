@@ -32,6 +32,9 @@ func TestStoreBootstrapAuthenticateAndSession(t *testing.T) {
 	if user.Login != "admin" {
 		t.Fatalf("user login = %q", user.Login)
 	}
+	if !user.IsAdmin || user.Disabled {
+		t.Fatalf("unexpected bootstrap user flags: %+v", user)
+	}
 	if _, err := s.Authenticate(ctx, "admin", "wrong"); err != ErrInvalidCredentials {
 		t.Fatalf("Authenticate(wrong) error = %v", err)
 	}
@@ -46,6 +49,9 @@ func TestStoreBootstrapAuthenticateAndSession(t *testing.T) {
 	}
 	if sessionUser.ID != user.ID {
 		t.Fatalf("session user id = %d, want %d", sessionUser.ID, user.ID)
+	}
+	if !sessionUser.IsAdmin {
+		t.Fatalf("session user is_admin = false, want true")
 	}
 
 	vault, err := s.PersonalVault(ctx, user.ID)
@@ -112,6 +118,9 @@ func TestCreateUserAndVaultSlugCollision(t *testing.T) {
 	if personal.Path == "alice" || personal.Path == "" {
 		t.Fatalf("personal vault path = %q, want stable technical path", personal.Path)
 	}
+	if user.IsAdmin || user.Disabled {
+		t.Fatalf("unexpected user flags: %+v", user)
+	}
 	if _, _, err := s.CreateUser(ctx, "alice", "secret"); err != ErrUserExists {
 		t.Fatalf("CreateUser(duplicate) error = %v", err)
 	}
@@ -138,6 +147,75 @@ func TestCreateUserAndVaultSlugCollision(t *testing.T) {
 	}
 	if got.ID != first.ID || got.Role != RoleOwner {
 		t.Fatalf("unexpected vault lookup: %+v", got)
+	}
+}
+
+func TestUserAdminDisabledPasswordAndSessionManagement(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer s.Close()
+
+	if err := s.BootstrapUser(ctx, "admin", "secret"); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+	admin, err := s.Authenticate(ctx, "admin", "secret")
+	if err != nil {
+		t.Fatalf("Authenticate(admin) error = %v", err)
+	}
+	if !admin.IsAdmin {
+		t.Fatal("bootstrap user is_admin = false")
+	}
+	user, _, err := s.CreateUser(ctx, "alice", "old")
+	if err != nil {
+		t.Fatalf("CreateUser() error = %v", err)
+	}
+	sessionID, _, err := s.CreateSession(ctx, user.ID, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+	if err := s.SetPassword(ctx, "alice", "new"); err != nil {
+		t.Fatalf("SetPassword() error = %v", err)
+	}
+	if _, err := s.Authenticate(ctx, "alice", "old"); err != ErrInvalidCredentials {
+		t.Fatalf("Authenticate(old password) error = %v", err)
+	}
+	if _, err := s.Authenticate(ctx, "alice", "new"); err != nil {
+		t.Fatalf("Authenticate(new password) error = %v", err)
+	}
+	if err := s.SetUserDisabled(ctx, "alice", true); err != nil {
+		t.Fatalf("SetUserDisabled(true) error = %v", err)
+	}
+	if _, err := s.Authenticate(ctx, "alice", "new"); err != ErrInvalidCredentials {
+		t.Fatalf("Authenticate(disabled) error = %v", err)
+	}
+	if _, err := s.ValidateSession(ctx, sessionID); err != ErrInvalidSession {
+		t.Fatalf("ValidateSession(disabled) error = %v", err)
+	}
+	if err := s.SetUserDisabled(ctx, "alice", false); err != nil {
+		t.Fatalf("SetUserDisabled(false) error = %v", err)
+	}
+	if _, err := s.Authenticate(ctx, "alice", "new"); err != nil {
+		t.Fatalf("Authenticate(enabled) error = %v", err)
+	}
+	sessionID, _, err = s.CreateSession(ctx, user.ID, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateSession(enabled) error = %v", err)
+	}
+	if err := s.DeleteSessionsForLogin(ctx, "alice"); err != nil {
+		t.Fatalf("DeleteSessionsForLogin() error = %v", err)
+	}
+	if _, err := s.ValidateSession(ctx, sessionID); err != ErrInvalidSession {
+		t.Fatalf("ValidateSession(revoked) error = %v", err)
+	}
+	users, err := s.ListUsers(ctx)
+	if err != nil {
+		t.Fatalf("ListUsers() error = %v", err)
+	}
+	if len(users) != 2 {
+		t.Fatalf("user count = %d, want 2", len(users))
 	}
 }
 

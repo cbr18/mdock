@@ -21,9 +21,11 @@ type Store struct {
 }
 
 type User struct {
-	ID       int64
-	Login    string
-	Password string
+	ID       int64  `json:"id"`
+	Login    string `json:"login"`
+	Password string `json:"-"`
+	IsAdmin  bool   `json:"is_admin"`
+	Disabled bool   `json:"disabled"`
 }
 
 type Vault struct {
@@ -80,8 +82,12 @@ func (s *Store) init(ctx context.Context) error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			login TEXT NOT NULL UNIQUE,
 			password_hash TEXT NOT NULL,
+			is_admin INTEGER NOT NULL DEFAULT 0,
+			disabled INTEGER NOT NULL DEFAULT 0,
 			created_at TEXT NOT NULL
 		);`,
+		`ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;`,
+		`ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0;`,
 		`CREATE TABLE IF NOT EXISTS vaults (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL DEFAULT '',
@@ -121,6 +127,9 @@ func (s *Store) init(ctx context.Context) error {
 			if strings.Contains(stmt, "ALTER TABLE vaults ADD COLUMN name") && strings.Contains(err.Error(), "duplicate column") {
 				continue
 			}
+			if strings.Contains(stmt, "ALTER TABLE users ADD COLUMN") && strings.Contains(err.Error(), "duplicate column") {
+				continue
+			}
 			return fmt.Errorf("initialize sqlite: %w", err)
 		}
 	}
@@ -130,6 +139,12 @@ func (s *Store) init(ctx context.Context) error {
 func (s *Store) BootstrapUser(ctx context.Context, login, password string) error {
 	user, err := s.GetUserByLogin(ctx, login)
 	if err == nil {
+		if err := s.SetUserAdmin(ctx, user.ID, true); err != nil {
+			return err
+		}
+		if err := s.SetUserDisabled(ctx, user.Login, false); err != nil {
+			return err
+		}
 		_, err = s.EnsurePersonalVault(ctx, user.ID, user.Login)
 		return err
 	}
@@ -140,7 +155,7 @@ func (s *Store) BootstrapUser(ctx context.Context, login, password string) error
 	if err != nil {
 		return fmt.Errorf("hash bootstrap password: %w", err)
 	}
-	res, err := s.db.ExecContext(ctx, `INSERT INTO users (login, password_hash, created_at) VALUES (?, ?, ?)`, login, string(hash), time.Now().UTC().Format(time.RFC3339Nano))
+	res, err := s.db.ExecContext(ctx, `INSERT INTO users (login, password_hash, is_admin, disabled, created_at) VALUES (?, ?, ?, ?, ?)`, login, string(hash), 1, 0, time.Now().UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return fmt.Errorf("insert bootstrap user: %w", err)
 	}
@@ -188,12 +203,12 @@ func (s *Store) CreateUser(ctx context.Context, login, password string) (User, V
 	if err := tx.Commit(); err != nil {
 		return User{}, Vault{}, fmt.Errorf("commit create user: %w", err)
 	}
-	return User{ID: userID, Login: login, Password: string(hash)}, vault, nil
+	return User{ID: userID, Login: login, Password: string(hash), IsAdmin: false, Disabled: false}, vault, nil
 }
 
 func (s *Store) GetUserByLogin(ctx context.Context, login string) (User, error) {
 	var user User
-	err := s.db.QueryRowContext(ctx, `SELECT id, login, password_hash FROM users WHERE login = ?`, login).Scan(&user.ID, &user.Login, &user.Password)
+	err := s.db.QueryRowContext(ctx, `SELECT id, login, password_hash, is_admin, disabled FROM users WHERE login = ?`, login).Scan(&user.ID, &user.Login, &user.Password, &user.IsAdmin, &user.Disabled)
 	if err != nil {
 		return User{}, err
 	}
@@ -312,12 +327,15 @@ func (s *Store) ListVaults(ctx context.Context) ([]Vault, error) {
 
 func (s *Store) Authenticate(ctx context.Context, login, password string) (User, error) {
 	var user User
-	err := s.db.QueryRowContext(ctx, `SELECT id, login, password_hash FROM users WHERE login = ?`, login).Scan(&user.ID, &user.Login, &user.Password)
+	err := s.db.QueryRowContext(ctx, `SELECT id, login, password_hash, is_admin, disabled FROM users WHERE login = ?`, login).Scan(&user.ID, &user.Login, &user.Password, &user.IsAdmin, &user.Disabled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrInvalidCredentials
 	}
 	if err != nil {
 		return User{}, fmt.Errorf("select user: %w", err)
+	}
+	if user.Disabled {
+		return User{}, ErrInvalidCredentials
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		return User{}, ErrInvalidCredentials
@@ -353,11 +371,11 @@ func (s *Store) ValidateSession(ctx context.Context, sessionID string) (User, er
 	var user User
 	var expiresRaw string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT users.id, users.login, users.password_hash, sessions.expires_at
+		SELECT users.id, users.login, users.password_hash, users.is_admin, users.disabled, sessions.expires_at
 		FROM sessions
 		JOIN users ON users.id = sessions.user_id
 		WHERE sessions.id = ?
-	`, sessionID).Scan(&user.ID, &user.Login, &user.Password, &expiresRaw)
+	`, sessionID).Scan(&user.ID, &user.Login, &user.Password, &user.IsAdmin, &user.Disabled, &expiresRaw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrInvalidSession
 	}
@@ -371,7 +389,79 @@ func (s *Store) ValidateSession(ctx context.Context, sessionID string) (User, er
 	if time.Now().UTC().After(expiresAt) {
 		return User{}, ErrInvalidSession
 	}
+	if user.Disabled {
+		return User{}, ErrInvalidSession
+	}
 	return user, nil
+}
+
+func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, login, is_admin, disabled FROM users ORDER BY login`)
+	if err != nil {
+		return nil, fmt.Errorf("list users: %w", err)
+	}
+	defer rows.Close()
+	var users []User
+	for rows.Next() {
+		var user User
+		if err := rows.Scan(&user.ID, &user.Login, &user.IsAdmin, &user.Disabled); err != nil {
+			return nil, fmt.Errorf("scan user: %w", err)
+		}
+		users = append(users, user)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate users: %w", err)
+	}
+	return users, nil
+}
+
+func (s *Store) SetUserAdmin(ctx context.Context, userID int64, isAdmin bool) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET is_admin = ? WHERE id = ?`, isAdmin, userID)
+	if err != nil {
+		return fmt.Errorf("set user admin: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) SetUserDisabled(ctx context.Context, login string, disabled bool) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET disabled = ? WHERE login = ?`, disabled, login)
+	if err != nil {
+		return fmt.Errorf("set user disabled: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) SetPassword(ctx context.Context, login, password string) error {
+	if strings.TrimSpace(login) == "" || password == "" {
+		return fmt.Errorf("login and password are required")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE login = ?`, string(hash), login)
+	if err != nil {
+		return fmt.Errorf("set password: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set password rows affected: %w", err)
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) DeleteSessionsForLogin(ctx context.Context, login string) error {
+	_, err := s.db.ExecContext(ctx, `
+		DELETE FROM sessions
+		WHERE user_id IN (SELECT id FROM users WHERE login = ?)
+	`, login)
+	if err != nil {
+		return fmt.Errorf("delete user sessions: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) JournalMode(ctx context.Context) (string, error) {

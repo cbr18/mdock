@@ -276,6 +276,96 @@ func TestRemotelySaveWebDAVCompatibility(t *testing.T) {
 	}
 }
 
+func TestAdminUserManagementAPI(t *testing.T) {
+	baseURL := getenv("TEST_BASE_URL", "http://127.0.0.1:18080")
+	adminUsername := getenv("BOOTSTRAP_USERNAME", "admin")
+	adminPassword := getenv("BOOTSTRAP_PASSWORD", "test-password")
+
+	adminClient := newSessionClient(t)
+	payload, _ := json.Marshal(map[string]string{"username": adminUsername, "password": adminPassword})
+	requireOK(t, adminClient, http.MethodPost, baseURL+"/api/auth/login", bytes.NewReader(payload))
+
+	suffix := time.Now().UTC().Format("20060102150405")
+	username := "admin-api-" + suffix
+	password := "old-password"
+	userClient := newSessionClient(t)
+	payload, _ = json.Marshal(map[string]string{"username": username, "password": password})
+	requireOK(t, userClient, http.MethodPost, baseURL+"/api/auth/register", bytes.NewReader(payload))
+
+	requireStatus(t, userClient, http.MethodGet, baseURL+"/api/admin/users", nil, http.StatusForbidden)
+	users := requireOK(t, adminClient, http.MethodGet, baseURL+"/api/admin/users", nil)
+	if strings.Contains(string(users), "password_hash") || strings.Contains(string(users), password) {
+		t.Fatalf("admin users leaked password data: %s", string(users))
+	}
+	if !strings.Contains(string(users), username) {
+		t.Fatalf("admin users response missing created user %q: %s", username, string(users))
+	}
+
+	payload, _ = json.Marshal(map[string]string{"current_password": password, "new_password": "new-password"})
+	requireOK(t, userClient, http.MethodPost, baseURL+"/api/auth/password", bytes.NewReader(payload))
+	requireStatus(t, userClient, http.MethodGet, baseURL+"/api/auth/me", nil, http.StatusUnauthorized)
+	requireLoginStatus(t, baseURL, username, password, http.StatusUnauthorized)
+	requireLoginStatus(t, baseURL, username, "new-password", http.StatusOK)
+
+	requireOK(t, adminClient, http.MethodPost, baseURL+"/api/admin/users/"+username+"/disable", bytes.NewReader(nil))
+	requireLoginStatus(t, baseURL, username, "new-password", http.StatusUnauthorized)
+	requireOK(t, adminClient, http.MethodPost, baseURL+"/api/admin/users/"+username+"/enable", bytes.NewReader(nil))
+	requireLoginStatus(t, baseURL, username, "new-password", http.StatusOK)
+
+	payload, _ = json.Marshal(map[string]string{"password": "admin-reset"})
+	requireOK(t, adminClient, http.MethodPost, baseURL+"/api/admin/users/"+username+"/password", bytes.NewReader(payload))
+	requireLoginStatus(t, baseURL, username, "new-password", http.StatusUnauthorized)
+
+	revokeClient := newSessionClient(t)
+	payload, _ = json.Marshal(map[string]string{"username": username, "password": "admin-reset"})
+	requireOK(t, revokeClient, http.MethodPost, baseURL+"/api/auth/login", bytes.NewReader(payload))
+	requireOK(t, adminClient, http.MethodPost, baseURL+"/api/admin/users/"+username+"/sessions/revoke", bytes.NewReader(nil))
+	requireStatus(t, revokeClient, http.MethodGet, baseURL+"/api/auth/me", nil, http.StatusUnauthorized)
+}
+
+func newSessionClient(t *testing.T) *http.Client {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New() error = %v", err)
+	}
+	return &http.Client{Timeout: 5 * time.Second, Jar: jar}
+}
+
+func requireLoginStatus(t *testing.T, baseURL, username, password string, status int) {
+	t.Helper()
+	client := newSessionClient(t)
+	payload, _ := json.Marshal(map[string]string{"username": username, "password": password})
+	requireStatus(t, client, http.MethodPost, baseURL+"/api/auth/login", bytes.NewReader(payload), status)
+}
+
+func requireStatus(t *testing.T, client *http.Client, method, url string, body *bytes.Reader, status int) []byte {
+	t.Helper()
+	if body == nil {
+		body = bytes.NewReader(nil)
+	}
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		t.Fatalf("NewRequest(%s) error = %v", url, err)
+	}
+	if method == http.MethodPost {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s error = %v", method, url, err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if resp.StatusCode != status {
+		t.Fatalf("%s %s status = %d want %d body=%s", method, url, resp.StatusCode, status, string(data))
+	}
+	return data
+}
+
 func requireOK(t *testing.T, client *http.Client, method, url string, body *bytes.Reader) []byte {
 	t.Helper()
 	if body == nil {
@@ -293,12 +383,12 @@ func requireOK(t *testing.T, client *http.Client, method, url string, body *byte
 		t.Fatalf("%s %s error = %v", method, url, err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		t.Fatalf("%s %s status = %d", method, url, resp.StatusCode)
-	}
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("read response body: %v", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		t.Fatalf("%s %s status = %d body=%s", method, url, resp.StatusCode, string(data))
 	}
 	return data
 }
