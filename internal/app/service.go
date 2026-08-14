@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/cbr/mdock/internal/config"
@@ -26,6 +27,14 @@ type AuthSession struct {
 	User      store.User
 	SessionID string
 	ExpiresAt time.Time
+}
+
+type GitStatus struct {
+	Vault     store.Vault `json:"vault"`
+	Dirty     bool        `json:"dirty"`
+	Status    string      `json:"status"`
+	QueueLen  int         `json:"queue_len"`
+	LastError string      `json:"last_error,omitempty"`
 }
 
 func New(cfg config.Config, st *store.Store, logger *slog.Logger) (*Service, error) {
@@ -143,4 +152,51 @@ func (s *Service) QueueForVault(item store.Vault) (*appgit.Queue, error) {
 		return nil, err
 	}
 	return s.queues.For(item.ID, root), nil
+}
+
+func (s *Service) GitStatus(ctx context.Context, userID int64, vaultSlug string) (GitStatus, error) {
+	item, root, queue, err := s.gitContext(ctx, userID, vaultSlug)
+	if err != nil {
+		return GitStatus{}, err
+	}
+	status, err := s.gitClient.StatusPorcelain(ctx, root)
+	if err != nil {
+		return GitStatus{}, err
+	}
+	var lastErr string
+	if err := queue.LastError(); err != nil {
+		lastErr = err.Error()
+	}
+	return GitStatus{
+		Vault:     item,
+		Dirty:     strings.TrimSpace(status) != "",
+		Status:    status,
+		QueueLen:  queue.Len(),
+		LastError: lastErr,
+	}, nil
+}
+
+func (s *Service) GitCommits(ctx context.Context, userID int64, vaultSlug string, limit int) (store.Vault, []appgit.CommitInfo, error) {
+	item, root, _, err := s.gitContext(ctx, userID, vaultSlug)
+	if err != nil {
+		return store.Vault{}, nil, err
+	}
+	commits, err := s.gitClient.Log(ctx, root, limit)
+	if err != nil {
+		return store.Vault{}, nil, err
+	}
+	return item, commits, nil
+}
+
+func (s *Service) gitContext(ctx context.Context, userID int64, vaultSlug string) (store.Vault, string, *appgit.Queue, error) {
+	item, err := s.store.VaultForUserBySlug(ctx, userID, vaultSlug)
+	if err != nil {
+		return store.Vault{}, "", nil, err
+	}
+	root, err := s.vaultService.EnsureVault(item.Path)
+	if err != nil {
+		return store.Vault{}, "", nil, err
+	}
+	queue := s.queues.For(item.ID, root)
+	return item, root, queue, nil
 }

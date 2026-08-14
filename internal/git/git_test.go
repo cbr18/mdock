@@ -58,6 +58,16 @@ func TestClientInitCommitAndRecovery(t *testing.T) {
 	if strings.TrimSpace(status) != "" {
 		t.Fatalf("status = %q, want clean", status)
 	}
+	commits, err := client.Log(ctx, repo, 5)
+	if err != nil {
+		t.Fatalf("Log() error = %v", err)
+	}
+	if len(commits) != 2 {
+		t.Fatalf("commit count = %d, want 2", len(commits))
+	}
+	if commits[0].Subject != "recovery: commit dirty startup state" || commits[1].Subject != "sync: update 1 file" {
+		t.Fatalf("unexpected commits: %+v", commits)
+	}
 }
 
 func TestQueueFlushCommitsPendingFiles(t *testing.T) {

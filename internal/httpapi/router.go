@@ -43,6 +43,8 @@ func (h *Handler) routes() (http.Handler, error) {
 		r.Post("/api/auth/logout", h.logout)
 		r.Get("/api/vaults", h.vaults)
 		r.Post("/api/vaults", h.createVault)
+		r.Get("/api/vaults/{slug}/git/status", h.gitStatus)
+		r.Get("/api/vaults/{slug}/git/commits", h.gitCommits)
 	})
 	webdavHandler := http.StripPrefix("/webdav", appwebdav.NewHandler(appwebdav.Config{
 		Store:        h.app.Store(),

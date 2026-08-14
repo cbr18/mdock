@@ -118,6 +118,22 @@ func TestRunningTestStack(t *testing.T) {
 	requireWebDAV(t, client, http.MethodGet, webdavBase+"/notes/tomorrow.md", smokeUsername, smokePassword, nil, http.StatusOK, "hello from obsidian")
 	requireWebDAV(t, client, http.MethodDelete, webdavBase+"/notes/tomorrow.md", smokeUsername, smokePassword, nil, http.StatusNoContent, "")
 	requireWebDAV(t, client, http.MethodPut, webdavBase+"/notes/keep.md", smokeUsername, smokePassword, strings.NewReader("kept for git commit"), http.StatusCreated, "")
+	time.Sleep(2 * time.Second)
+	gitStatusBody := requireOK(t, client, http.MethodGet, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/git/status", nil)
+	var gitStatus struct {
+		Dirty    bool `json:"dirty"`
+		QueueLen int  `json:"queue_len"`
+	}
+	if err := json.Unmarshal(gitStatusBody, &gitStatus); err != nil {
+		t.Fatalf("decode git status response: %v", err)
+	}
+	if gitStatus.Dirty || gitStatus.QueueLen != 0 {
+		t.Fatalf("unexpected git status after debounce: %+v", gitStatus)
+	}
+	gitCommitsBody := requireOK(t, client, http.MethodGet, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/git/commits?limit=5", nil)
+	if !strings.Contains(string(gitCommitsBody), "sync: update") {
+		t.Fatalf("git commits response missing sync commit: %s", string(gitCommitsBody))
+	}
 }
 
 func TestRemotelySaveWebDAVCompatibility(t *testing.T) {

@@ -1,6 +1,6 @@
 # Git visibility API
 
-Status: CREATED
+Status: DONE
 Created: 2026-08-14 19:12
 Project: mdock
 Plan: [14_08_2026_19_12_git_visibility_api.md](../plans/14_08_2026_19_12_git_visibility_api.md)
@@ -55,7 +55,16 @@ Git работает как внутренняя очередь, но польз
 
 ## Результаты валидации
 
-- Пока не выполнялось.
+- `go test ./...` — успешно.
+- `npm test` из `web/` — успешно, `2` теста.
+- `docker compose --env-file test/.env.test.example -f test/docker-compose.yml up -d --build` — успешно.
+- `./test/run-smoke.sh` — успешно, включая Remotely Save compatibility matrix.
+- Логи test stack проверены фильтром по `database is locked`, `level=ERROR`, `status=5xx`, `panic`, `Authorization`, `Basic`, `password`, `Cookie`, `Set-Cookie` — совпадений нет.
+- Добавлены read-only endpoints:
+  - `GET /api/vaults/{slug}/git/status`;
+  - `GET /api/vaults/{slug}/git/commits?limit=N`.
+- Endpoints проверяют доступ через vault membership и возвращают `404` для чужого vault.
+- Smoke проверяет git status/commits после WebDAV write и debounce.
 
 ## Откат
 

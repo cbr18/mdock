@@ -77,7 +77,7 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 		VaultsRoot:     t.TempDir(),
 		GitBin:         "git",
 		SessionTTL:     time.Hour,
-		CommitDebounce: time.Hour,
+		CommitDebounce: 10 * time.Millisecond,
 		LockTTL:        time.Hour,
 	}, st, slog.Default())
 	if err != nil {
@@ -139,5 +139,52 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	srv.Handler().ServeHTTP(bad, req)
 	if bad.Code == http.StatusCreated {
 		t.Fatal("expected .git write to be rejected")
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	status := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/git/status", nil)
+	req.AddCookie(cookies[0])
+	srv.Handler().ServeHTTP(status, req)
+	if status.Code != http.StatusOK {
+		t.Fatalf("git status code = %d body=%s", status.Code, status.Body.String())
+	}
+	var statusResponse struct {
+		Dirty    bool `json:"dirty"`
+		QueueLen int  `json:"queue_len"`
+	}
+	if err := json.Unmarshal(status.Body.Bytes(), &statusResponse); err != nil {
+		t.Fatalf("decode git status: %v", err)
+	}
+	if statusResponse.Dirty || statusResponse.QueueLen != 0 {
+		t.Fatalf("unexpected git status: %+v", statusResponse)
+	}
+
+	commits := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/git/commits?limit=5", nil)
+	req.AddCookie(cookies[0])
+	srv.Handler().ServeHTTP(commits, req)
+	if commits.Code != http.StatusOK {
+		t.Fatalf("git commits code = %d body=%s", commits.Code, commits.Body.String())
+	}
+	if !strings.Contains(commits.Body.String(), "sync: update 1 file") {
+		t.Fatalf("git commits response missing commit subject: %s", commits.Body.String())
+	}
+
+	body, _ = json.Marshal(map[string]string{"username": "bob", "password": "secret"})
+	otherRegister := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(body))
+	srv.Handler().ServeHTTP(otherRegister, req)
+	if otherRegister.Code != http.StatusCreated {
+		t.Fatalf("register bob status = %d body=%s", otherRegister.Code, otherRegister.Body.String())
+	}
+	otherCookies := otherRegister.Result().Cookies()
+	hidden := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/git/status", nil)
+	req.AddCookie(otherCookies[0])
+	srv.Handler().ServeHTTP(hidden, req)
+	if hidden.Code != http.StatusNotFound {
+		t.Fatalf("other user git status code = %d body=%s", hidden.Code, hidden.Body.String())
 	}
 }

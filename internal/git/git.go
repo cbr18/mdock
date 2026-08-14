@@ -16,6 +16,13 @@ type Client struct {
 	bin string
 }
 
+type CommitInfo struct {
+	Hash      string `json:"hash"`
+	Subject   string `json:"subject"`
+	Author    string `json:"author"`
+	CreatedAt string `json:"created_at"`
+}
+
 func NewClient(bin string) *Client {
 	if bin == "" {
 		bin = "git"
@@ -49,6 +56,40 @@ func (c *Client) EnsureMainBranch(ctx context.Context, repoPath string) error {
 
 func (c *Client) StatusPorcelain(ctx context.Context, repoPath string) (string, error) {
 	return c.run(ctx, repoPath, "status", "--porcelain")
+}
+
+func (c *Client) Log(ctx context.Context, repoPath string, limit int) ([]CommitInfo, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	out, err := c.run(ctx, repoPath, "log", fmt.Sprintf("-%d", limit), "--date=iso-strict", "--pretty=format:%H%x1f%an%x1f%aI%x1f%s")
+	if err != nil {
+		if strings.Contains(err.Error(), "does not have any commits yet") || strings.Contains(err.Error(), "your current branch") {
+			return nil, nil
+		}
+		return nil, err
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	commits := make([]CommitInfo, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\x1f", 4)
+		if len(parts) != 4 {
+			return nil, fmt.Errorf("parse git log line: %q", line)
+		}
+		commits = append(commits, CommitInfo{
+			Hash:      parts[0],
+			Author:    parts[1],
+			CreatedAt: parts[2],
+			Subject:   parts[3],
+		})
+	}
+	return commits, nil
 }
 
 func (c *Client) HasChanges(ctx context.Context, repoPath string) (bool, error) {
