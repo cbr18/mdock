@@ -359,7 +359,7 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	if commits.Code != http.StatusOK {
 		t.Fatalf("git commits code = %d body=%s", commits.Code, commits.Body.String())
 	}
-	if !strings.Contains(commits.Body.String(), "sync: update 1 file") {
+	if !strings.Contains(commits.Body.String(), "sync(webdav): update 1 file") {
 		t.Fatalf("git commits response missing commit subject: %s", commits.Body.String())
 	}
 

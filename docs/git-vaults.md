@@ -29,6 +29,16 @@ vault.path=vault-42
 
 Recovery commit нужен, чтобы после crash/restart не оставлять рабочую директорию в неопределённом состоянии.
 
+При штатной остановке `SIGTERM`/`SIGINT` сервер не должен полагаться на recovery path. Порядок graceful shutdown:
+
+1. остановить приём новых HTTP-запросов через `http.Server.Shutdown`;
+2. дождаться завершения активных handlers в пределах shutdown timeout;
+3. закрыть все git queues;
+4. для каждой queue остановить debounce timer, дождаться текущей git-операции и flush'нуть pending changes;
+5. выйти.
+
+Если процесс убит жёстко или shutdown timeout истёк, следующий старт всё равно подберёт dirty state recovery-коммитом.
+
 ## Очередь git-операций
 
 На каждый vault есть отдельная in-memory queue.
@@ -40,8 +50,36 @@ Recovery commit нужен, чтобы после crash/restart не остав�
 - queue даёт эффект mutex для repo, а не для всего приложения;
 - WebDAV/file операции сначала меняют файл, потом ставят git task;
 - несколько изменений в debounce-window коммитятся вместе;
-- commit message для sync сейчас общий: `sync: update vault files`;
+- commit message включает источник и количество файлов;
 - queue хранит pending paths in-memory; если процесс упал до flush, startup recovery commit подберёт dirty состояние после рестарта.
+
+Формат commit message:
+
+```text
+sync(webdav): update 1 file
+sync(web): update 2 files
+sync(mixed): update 3 files
+recovery: uncommitted changes on startup
+```
+
+Если в один debounce-window попали изменения из разных источников, используется `sync(mixed)`.
+
+## Attachments And Binary Files
+
+MVP-решение: коммитим всё содержимое vault как есть, включая картинки, PDF и другие Obsidian attachments.
+
+Причины:
+
+- Obsidian хранит attachments внутри vault, и игнорировать их по умолчанию опаснее, чем раздувать repo;
+- пользователь ожидает, что git/backup покрывает весь vault, а не только `.md`;
+- `.gitignore` или size threshold могут незаметно исключить важные файлы.
+
+Минусы решения:
+
+- repo может быстро расти на больших бинарниках;
+- git diff/history для бинарных файлов почти бесполезны.
+
+Будущая настройка может добавить per-vault ignore patterns или size threshold, но только как явную пользовательскую политику. В MVP скрытой автоматической фильтрации нет.
 
 ## Remote Backup
 
@@ -62,6 +100,8 @@ Remote optional. Если remote не настроен, mdock не делает 
 - включается только если `remote_url` не пустой;
 - запускается после успешного local commit или по расписанию;
 - ошибки push пишутся в `last_push_error`, но не должны ломать локальную работу vault;
+- retry/backoff worker в MVP не реализуется;
+- если remote временно недоступен, следующая ручная команда push или будущий auto-push trigger попробует снова;
 - повторный push должен быть идемпотентным относительно уже запушенных commits.
 
 ## Локи И Git

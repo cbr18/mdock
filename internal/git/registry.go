@@ -1,6 +1,8 @@
 package git
 
 import (
+	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -25,4 +27,21 @@ func (r *QueueRegistry) For(vaultID int64, repoPath string) *Queue {
 	queue := NewQueue(r.client, repoPath, r.debounce)
 	r.queues[vaultID] = queue
 	return queue
+}
+
+func (r *QueueRegistry) CloseAll(ctx context.Context) error {
+	r.mu.Lock()
+	queues := make(map[int64]*Queue, len(r.queues))
+	for vaultID, queue := range r.queues {
+		queues[vaultID] = queue
+	}
+	r.mu.Unlock()
+
+	var firstErr error
+	for vaultID, queue := range queues {
+		if err := queue.Close(ctx); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("close git queue for vault %d: %w", vaultID, err)
+		}
+	}
+	return firstErr
 }

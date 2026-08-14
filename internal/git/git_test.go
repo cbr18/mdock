@@ -65,7 +65,7 @@ func TestClientInitCommitAndRecovery(t *testing.T) {
 	if len(commits) != 2 {
 		t.Fatalf("commit count = %d, want 2", len(commits))
 	}
-	if commits[0].Subject != "recovery: commit dirty startup state" || commits[1].Subject != "sync: update 1 file" {
+	if commits[0].Subject != "recovery: uncommitted changes on startup" || commits[1].Subject != "sync: update 1 file" {
 		t.Fatalf("unexpected commits: %+v", commits)
 	}
 }
@@ -129,6 +129,13 @@ func TestQueueFlushCommitsPendingFiles(t *testing.T) {
 	if strings.TrimSpace(status) != "" {
 		t.Fatalf("status = %q, want clean", status)
 	}
+	commits, err := client.Log(ctx, repo, 1)
+	if err != nil {
+		t.Fatalf("Log() error = %v", err)
+	}
+	if len(commits) != 1 || commits[0].Subject != "sync(test): update 1 file" {
+		t.Fatalf("unexpected queue commit: %+v", commits)
+	}
 }
 
 func TestQueueFlushCommitsFinalStateWhenPendingPathsWereRemoved(t *testing.T) {
@@ -167,5 +174,47 @@ func TestQueueFlushCommitsFinalStateWhenPendingPathsWereRemoved(t *testing.T) {
 	}
 	if strings.TrimSpace(status) != "" {
 		t.Fatalf("status = %q, want clean", status)
+	}
+	commits, err := client.Log(ctx, repo, 1)
+	if err != nil {
+		t.Fatalf("Log() error = %v", err)
+	}
+	if len(commits) != 1 || commits[0].Subject != "sync(test): update 3 files" {
+		t.Fatalf("unexpected queue commit: %+v", commits)
+	}
+}
+
+func TestQueueRegistryCloseAllFlushesQueues(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	client := NewClient("git")
+	if err := client.InitIfNeeded(ctx, repo); err != nil {
+		t.Fatalf("InitIfNeeded() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "note.md"), []byte("shutdown"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	registry := NewQueueRegistry(client, time.Hour)
+	queue := registry.For(1, repo)
+	if err := queue.Enqueue(ctx, Task{Source: "webdav", Message: "changed", Paths: []string{"note.md"}}); err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+	if err := registry.CloseAll(ctx); err != nil {
+		t.Fatalf("CloseAll() error = %v", err)
+	}
+	status, err := client.StatusPorcelain(ctx, repo)
+	if err != nil {
+		t.Fatalf("StatusPorcelain() error = %v", err)
+	}
+	if strings.TrimSpace(status) != "" {
+		t.Fatalf("status = %q, want clean", status)
+	}
+	commits, err := client.Log(ctx, repo, 1)
+	if err != nil {
+		t.Fatalf("Log() error = %v", err)
+	}
+	if len(commits) != 1 || commits[0].Subject != "sync(webdav): update 1 file" {
+		t.Fatalf("unexpected shutdown commit: %+v", commits)
 	}
 }

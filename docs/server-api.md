@@ -161,7 +161,7 @@ Request:
 
 ```json
 {
-  "remote_url": "git@host:owner/repo.git"
+  "url": "git@host:owner/repo.git"
 }
 ```
 

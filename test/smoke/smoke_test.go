@@ -155,7 +155,7 @@ func TestRunningTestStack(t *testing.T) {
 		t.Fatalf("unexpected git status after debounce: %+v", gitStatus)
 	}
 	gitCommitsBody := requireOK(t, client, http.MethodGet, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/git/commits?limit=5", nil)
-	if !strings.Contains(string(gitCommitsBody), "sync: update") {
+	if !strings.Contains(string(gitCommitsBody), "sync(webdav): update") {
 		t.Fatalf("git commits response missing sync commit: %s", string(gitCommitsBody))
 	}
 

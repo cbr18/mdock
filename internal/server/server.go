@@ -11,7 +11,8 @@ import (
 )
 
 type Server struct {
-	router http.Handler
+	router  http.Handler
+	service *app.Service
 }
 
 func New(cfg config.Config, st *store.Store, logger *slog.Logger) (*Server, error) {
@@ -23,9 +24,13 @@ func New(cfg config.Config, st *store.Store, logger *slog.Logger) (*Server, erro
 	if err != nil {
 		return nil, err
 	}
-	return &Server{router: router}, nil
+	return &Server{router: router, service: service}, nil
 }
 
 func (s *Server) Handler() http.Handler {
 	return s.router
+}
+
+func (s *Server) Service() *app.Service {
+	return s.service
 }

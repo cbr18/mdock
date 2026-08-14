@@ -152,7 +152,7 @@ func (c *Client) RecoveryCommit(ctx context.Context, repoPath string) (bool, err
 	if err := c.Add(ctx, repoPath, nil); err != nil {
 		return false, err
 	}
-	return c.Commit(ctx, repoPath, "recovery: commit dirty startup state")
+	return c.Commit(ctx, repoPath, "recovery: uncommitted changes on startup")
 }
 
 func (c *Client) run(ctx context.Context, repoPath string, args ...string) (string, error) {
@@ -180,7 +180,7 @@ type Queue struct {
 
 	runMu   sync.Mutex
 	mu      sync.Mutex
-	pending map[string]struct{}
+	pending map[string]string
 	timer   *time.Timer
 	closed  bool
 	lastErr error
@@ -190,7 +190,7 @@ func NewQueue(client *Client, repoPath string, debounce time.Duration) *Queue {
 	if debounce <= 0 {
 		debounce = time.Second
 	}
-	return &Queue{client: client, repoPath: repoPath, debounce: debounce, pending: map[string]struct{}{}}
+	return &Queue{client: client, repoPath: repoPath, debounce: debounce, pending: map[string]string{}}
 }
 
 func (q *Queue) Enqueue(_ context.Context, task Task) error {
@@ -206,10 +206,10 @@ func (q *Queue) Enqueue(_ context.Context, task Task) error {
 		return fmt.Errorf("git queue is closed")
 	}
 	for _, path := range task.Paths {
-		q.pending[path] = struct{}{}
+		q.pending[path] = task.Source
 	}
 	if len(task.Paths) == 0 {
-		q.pending[""] = struct{}{}
+		q.pending[""] = task.Source
 	}
 	if q.timer != nil {
 		q.timer.Stop()
@@ -257,12 +257,16 @@ func (q *Queue) RunExclusive(ctx context.Context, fn func(context.Context) error
 func (q *Queue) flush(ctx context.Context) error {
 	q.mu.Lock()
 	paths := make([]string, 0, len(q.pending))
-	for path := range q.pending {
+	sources := map[string]struct{}{}
+	for path, source := range q.pending {
 		if path != "" {
 			paths = append(paths, path)
 		}
+		if source != "" {
+			sources[source] = struct{}{}
+		}
 	}
-	q.pending = map[string]struct{}{}
+	q.pending = map[string]string{}
 	q.mu.Unlock()
 
 	q.runMu.Lock()
@@ -272,10 +276,7 @@ func (q *Queue) flush(ctx context.Context) error {
 		q.setLastErr(err)
 		return err
 	}
-	message := fmt.Sprintf("sync: update %d files", len(paths))
-	if len(paths) == 1 {
-		message = "sync: update 1 file"
-	}
+	message := syncCommitMessage(sources, len(paths))
 	_, err := q.client.Commit(ctx, q.repoPath, message)
 	if err != nil {
 		q.setLastErr(err)
@@ -283,6 +284,23 @@ func (q *Queue) flush(ctx context.Context) error {
 	}
 	q.setLastErr(nil)
 	return nil
+}
+
+func syncCommitMessage(sources map[string]struct{}, files int) string {
+	source := "mixed"
+	if len(sources) == 1 {
+		for item := range sources {
+			source = item
+		}
+	}
+	if strings.TrimSpace(source) == "" {
+		source = "unknown"
+	}
+	unit := "files"
+	if files == 1 {
+		unit = "file"
+	}
+	return fmt.Sprintf("sync(%s): update %d %s", source, files, unit)
 }
 
 func (q *Queue) setLastErr(err error) {

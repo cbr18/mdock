@@ -125,6 +125,10 @@ func (s *Service) Logger() *slog.Logger {
 	return s.logger
 }
 
+func (s *Service) Shutdown(ctx context.Context) error {
+	return s.queues.CloseAll(ctx)
+}
+
 func (s *Service) Ready(ctx context.Context) Readiness {
 	checks := map[string]string{
 		"sqlite":     "ok",
