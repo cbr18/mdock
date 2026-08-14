@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -45,7 +46,11 @@ type Readiness struct {
 	Checks map[string]string `json:"checks"`
 }
 
-var ErrForbidden = errors.New("forbidden")
+var (
+	ErrForbidden           = errors.New("forbidden")
+	ErrInvalidRemoteURL    = errors.New("invalid remote url")
+	ErrRemoteNotConfigured = errors.New("remote not configured")
+)
 
 func New(cfg config.Config, st *store.Store, logger *slog.Logger) (*Service, error) {
 	if logger == nil {
@@ -266,6 +271,54 @@ func (s *Service) VaultMembers(ctx context.Context, userID int64, vaultSlug stri
 	return item, members, nil
 }
 
+func (s *Service) SetVaultRemoteURL(ctx context.Context, userID int64, vaultSlug, remoteURL string) (store.Vault, error) {
+	item, err := s.requireVaultOwner(ctx, userID, vaultSlug)
+	if err != nil {
+		return store.Vault{}, err
+	}
+	if err := validateRemoteURL(remoteURL); err != nil {
+		return store.Vault{}, err
+	}
+	updated, err := s.store.SetVaultRemoteURL(ctx, item.ID, strings.TrimSpace(remoteURL))
+	if err != nil {
+		return store.Vault{}, err
+	}
+	updated.Role = item.Role
+	return updated, nil
+}
+
+func (s *Service) PushVaultRemote(ctx context.Context, userID int64, vaultSlug string) (store.Vault, error) {
+	item, root, queue, err := s.gitContext(ctx, userID, vaultSlug)
+	if err != nil {
+		return store.Vault{}, err
+	}
+	if item.Role != store.RoleOwner {
+		return store.Vault{}, ErrForbidden
+	}
+	if strings.TrimSpace(item.RemoteURL) == "" {
+		return store.Vault{}, ErrRemoteNotConfigured
+	}
+	if err := validateRemoteURL(item.RemoteURL); err != nil {
+		return store.Vault{}, err
+	}
+	if err := queue.Flush(ctx); err != nil {
+		_ = s.store.SetVaultPushResult(ctx, item.ID, time.Now(), err)
+		return store.Vault{}, err
+	}
+	err = queue.RunExclusive(ctx, func(ctx context.Context) error {
+		return s.gitClient.Push(ctx, root, item.RemoteURL)
+	})
+	_ = s.store.SetVaultPushResult(ctx, item.ID, time.Now(), err)
+	updated, lookupErr := s.store.VaultForUserBySlug(ctx, userID, vaultSlug)
+	if lookupErr != nil {
+		return store.Vault{}, lookupErr
+	}
+	if err != nil {
+		return updated, err
+	}
+	return updated, nil
+}
+
 func (s *Service) PrepareVault(ctx context.Context, item store.Vault) error {
 	root, err := s.vaultService.EnsureVault(item.Path)
 	if err != nil {
@@ -332,6 +385,26 @@ func (s *Service) requireVaultOwner(ctx context.Context, userID int64, vaultSlug
 		return store.Vault{}, ErrForbidden
 	}
 	return item, nil
+}
+
+func validateRemoteURL(remoteURL string) error {
+	remoteURL = strings.TrimSpace(remoteURL)
+	if remoteURL == "" {
+		return nil
+	}
+	if strings.ContainsAny(remoteURL, "\r\n\t ") {
+		return ErrInvalidRemoteURL
+	}
+	if strings.Contains(remoteURL, "://") {
+		parsed, err := url.Parse(remoteURL)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return ErrInvalidRemoteURL
+		}
+		if parsed.User != nil {
+			return ErrInvalidRemoteURL
+		}
+	}
+	return nil
 }
 
 func (s *Service) gitContext(ctx context.Context, userID int64, vaultSlug string) (store.Vault, string, *appgit.Queue, error) {

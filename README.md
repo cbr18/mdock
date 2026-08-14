@@ -79,6 +79,18 @@ Troubleshooting:
 - If sync fails after changing `Remote Base Dir`, treat it as a new remote folder; Remotely Save does not move old remote content automatically.
 - If large-file sync fails, keep normal full-file upload behavior for now. mdock does not advertise Nextcloud, Apache partial update or Sabre partial update capabilities in the MVP.
 
+## Remote Git Backup
+
+Each vault keeps local git history by default. A vault owner can optionally configure a backup remote through the API:
+
+```text
+PUT /api/vaults/<vault-slug>/git/remote
+POST /api/vaults/<vault-slug>/git/push
+GET /api/vaults/<vault-slug>/git/remote
+```
+
+mdock does not store git credentials in MVP. URLs with embedded userinfo such as `https://user:token@host/repo.git` are rejected. Use server-side SSH keys, a local bare repo path, or a credential helper configured outside mdock.
+
 ## Production Docker
 
 Copy `.env.example` to `.env`, change `BOOTSTRAP_PASSWORD`, then run:

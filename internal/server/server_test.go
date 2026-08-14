@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -350,6 +352,37 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	}
 	if !strings.Contains(commits.Body.String(), "sync: update 1 file") {
 		t.Fatalf("git commits response missing commit subject: %s", commits.Body.String())
+	}
+
+	badRemoteBody, _ := json.Marshal(map[string]string{"url": "https://user:token@example.test/repo.git"})
+	badRemote := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/vaults/work-notes/git/remote", bytes.NewReader(badRemoteBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(badRemote, req)
+	if badRemote.Code != http.StatusBadRequest {
+		t.Fatalf("bad remote status = %d body=%s", badRemote.Code, badRemote.Body.String())
+	}
+	remoteDir := filepath.Join(t.TempDir(), "backup.git")
+	if err := exec.Command("git", "init", "--bare", remoteDir).Run(); err != nil {
+		t.Fatalf("init bare remote: %v", err)
+	}
+	remoteBody, _ := json.Marshal(map[string]string{"url": remoteDir})
+	setRemote := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/vaults/work-notes/git/remote", bytes.NewReader(remoteBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(setRemote, req)
+	if setRemote.Code != http.StatusOK {
+		t.Fatalf("set remote status = %d body=%s", setRemote.Code, setRemote.Body.String())
+	}
+	pushRemote := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/git/push", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(pushRemote, req)
+	if pushRemote.Code != http.StatusOK {
+		t.Fatalf("push remote status = %d body=%s", pushRemote.Code, pushRemote.Body.String())
+	}
+	if out, err := exec.Command("git", "-C", remoteDir, "rev-parse", "--verify", "main").CombinedOutput(); err != nil || strings.TrimSpace(string(out)) == "" {
+		t.Fatalf("remote main missing: out=%s err=%v", string(out), err)
 	}
 
 	archive := httptest.NewRecorder()

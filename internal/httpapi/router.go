@@ -57,6 +57,9 @@ func (h *Handler) routes() (http.Handler, error) {
 		r.Get("/api/vaults/{slug}/members", h.vaultMembers)
 		r.Get("/api/vaults/{slug}/git/status", h.gitStatus)
 		r.Get("/api/vaults/{slug}/git/commits", h.gitCommits)
+		r.Get("/api/vaults/{slug}/git/remote", h.gitRemote)
+		r.Put("/api/vaults/{slug}/git/remote", h.setGitRemote)
+		r.Post("/api/vaults/{slug}/git/push", h.pushGitRemote)
 		r.Group(func(r chi.Router) {
 			r.Use(h.requireAdmin)
 			r.Get("/api/admin/users", h.adminUsers)

@@ -70,6 +70,38 @@ func TestClientInitCommitAndRecovery(t *testing.T) {
 	}
 }
 
+func TestClientPushToBareRemote(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	remote := filepath.Join(t.TempDir(), "backup.git")
+	client := NewClient("git")
+	if err := client.InitIfNeeded(ctx, repo); err != nil {
+		t.Fatalf("InitIfNeeded() error = %v", err)
+	}
+	if _, err := client.run(ctx, t.TempDir(), "init", "--bare", remote); err != nil {
+		t.Fatalf("init bare remote error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "note.md"), []byte("hello"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := client.Add(ctx, repo, nil); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+	if _, err := client.Commit(ctx, repo, "sync: update 1 file"); err != nil {
+		t.Fatalf("Commit() error = %v", err)
+	}
+	if err := client.Push(ctx, repo, remote); err != nil {
+		t.Fatalf("Push() error = %v", err)
+	}
+	out, err := client.run(ctx, remote, "rev-parse", "--verify", "main")
+	if err != nil {
+		t.Fatalf("remote main rev-parse error = %v", err)
+	}
+	if strings.TrimSpace(out) == "" {
+		t.Fatal("remote main hash is empty")
+	}
+}
+
 func TestQueueFlushCommitsPendingFiles(t *testing.T) {
 	ctx := context.Background()
 	repo := t.TempDir()

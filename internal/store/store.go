@@ -29,14 +29,17 @@ type User struct {
 }
 
 type Vault struct {
-	ID        int64  `json:"id"`
-	Name      string `json:"name"`
-	Slug      string `json:"slug"`
-	Kind      string `json:"kind"`
-	Path      string `json:"path"`
-	Role      string `json:"role,omitempty"`
-	Archived  bool   `json:"archived"`
-	CreatedAt string `json:"created_at,omitempty"`
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	Slug          string `json:"slug"`
+	Kind          string `json:"kind"`
+	Path          string `json:"path"`
+	Role          string `json:"role,omitempty"`
+	Archived      bool   `json:"archived"`
+	RemoteURL     string `json:"remote_url,omitempty"`
+	LastPushAt    string `json:"last_push_at,omitempty"`
+	LastPushError string `json:"last_push_error,omitempty"`
+	CreatedAt     string `json:"created_at,omitempty"`
 }
 
 type VaultMember struct {
@@ -103,10 +106,16 @@ func (s *Store) init(ctx context.Context) error {
 			kind TEXT NOT NULL,
 			path TEXT NOT NULL UNIQUE,
 			archived INTEGER NOT NULL DEFAULT 0,
+			remote_url TEXT NOT NULL DEFAULT '',
+			last_push_at TEXT NOT NULL DEFAULT '',
+			last_push_error TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL
 		);`,
 		`ALTER TABLE vaults ADD COLUMN name TEXT NOT NULL DEFAULT '';`,
 		`ALTER TABLE vaults ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;`,
+		`ALTER TABLE vaults ADD COLUMN remote_url TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE vaults ADD COLUMN last_push_at TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE vaults ADD COLUMN last_push_error TEXT NOT NULL DEFAULT '';`,
 		`UPDATE vaults SET name = slug WHERE name = '';`,
 		`CREATE TABLE IF NOT EXISTS vault_members (
 			vault_id INTEGER NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
@@ -261,13 +270,13 @@ func (s *Store) CreateVaultForUser(ctx context.Context, userID int64, name, kind
 func (s *Store) PersonalVault(ctx context.Context, userID int64) (Vault, error) {
 	var vault Vault
 	err := s.db.QueryRowContext(ctx, `
-		SELECT vaults.id, vaults.name, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.archived, vaults.created_at
+		SELECT vaults.id, vaults.name, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.archived, vaults.remote_url, vaults.last_push_at, vaults.last_push_error, vaults.created_at
 		FROM vaults
 		JOIN vault_members ON vault_members.vault_id = vaults.id
 		WHERE vault_members.user_id = ? AND vaults.kind = ? AND vaults.archived = 0
 		ORDER BY vaults.id
 		LIMIT 1
-	`, userID, VaultKindPersonal).Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.Archived, &vault.CreatedAt)
+	`, userID, VaultKindPersonal).Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.Archived, &vault.RemoteURL, &vault.LastPushAt, &vault.LastPushError, &vault.CreatedAt)
 	if err != nil {
 		return Vault{}, err
 	}
@@ -285,12 +294,12 @@ func (s *Store) VaultForUserBySlugIncludingArchived(ctx context.Context, userID 
 func (s *Store) vaultForUserBySlug(ctx context.Context, userID int64, slug string, includeArchived bool) (Vault, error) {
 	var vault Vault
 	err := s.db.QueryRowContext(ctx, `
-		SELECT vaults.id, vaults.name, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.archived, vaults.created_at
+		SELECT vaults.id, vaults.name, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.archived, vaults.remote_url, vaults.last_push_at, vaults.last_push_error, vaults.created_at
 		FROM vaults
 		JOIN vault_members ON vault_members.vault_id = vaults.id
 		WHERE vault_members.user_id = ? AND vaults.slug = ? AND (? OR vaults.archived = 0)
 		LIMIT 1
-	`, userID, slug, includeArchived).Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.Archived, &vault.CreatedAt)
+	`, userID, slug, includeArchived).Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.Archived, &vault.RemoteURL, &vault.LastPushAt, &vault.LastPushError, &vault.CreatedAt)
 	if err != nil {
 		return Vault{}, err
 	}
@@ -299,7 +308,7 @@ func (s *Store) vaultForUserBySlug(ctx context.Context, userID int64, slug strin
 
 func (s *Store) ListVaultsForUser(ctx context.Context, userID int64) ([]Vault, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT vaults.id, vaults.name, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.archived, vaults.created_at
+		SELECT vaults.id, vaults.name, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.archived, vaults.remote_url, vaults.last_push_at, vaults.last_push_error, vaults.created_at
 		FROM vaults
 		JOIN vault_members ON vault_members.vault_id = vaults.id
 		WHERE vault_members.user_id = ? AND vaults.archived = 0
@@ -312,7 +321,7 @@ func (s *Store) ListVaultsForUser(ctx context.Context, userID int64) ([]Vault, e
 	var vaults []Vault
 	for rows.Next() {
 		var vault Vault
-		if err := rows.Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.Archived, &vault.CreatedAt); err != nil {
+		if err := rows.Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.Archived, &vault.RemoteURL, &vault.LastPushAt, &vault.LastPushError, &vault.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan vault: %w", err)
 		}
 		vaults = append(vaults, vault)
@@ -324,7 +333,7 @@ func (s *Store) ListVaultsForUser(ctx context.Context, userID int64) ([]Vault, e
 }
 
 func (s *Store) ListVaults(ctx context.Context) ([]Vault, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, slug, kind, path, archived, created_at FROM vaults ORDER BY slug`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, slug, kind, path, archived, remote_url, last_push_at, last_push_error, created_at FROM vaults ORDER BY slug`)
 	if err != nil {
 		return nil, fmt.Errorf("list all vaults: %w", err)
 	}
@@ -332,7 +341,7 @@ func (s *Store) ListVaults(ctx context.Context) ([]Vault, error) {
 	var vaults []Vault
 	for rows.Next() {
 		var vault Vault
-		if err := rows.Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Archived, &vault.CreatedAt); err != nil {
+		if err := rows.Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Archived, &vault.RemoteURL, &vault.LastPushAt, &vault.LastPushError, &vault.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan vault: %w", err)
 		}
 		vaults = append(vaults, vault)
@@ -363,11 +372,32 @@ func (s *Store) SetVaultArchived(ctx context.Context, vaultID int64, archived bo
 
 func (s *Store) VaultByID(ctx context.Context, vaultID int64) (Vault, error) {
 	var vault Vault
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, slug, kind, path, archived, created_at FROM vaults WHERE id = ?`, vaultID).Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Archived, &vault.CreatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, slug, kind, path, archived, remote_url, last_push_at, last_push_error, created_at FROM vaults WHERE id = ?`, vaultID).Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Archived, &vault.RemoteURL, &vault.LastPushAt, &vault.LastPushError, &vault.CreatedAt)
 	if err != nil {
 		return Vault{}, err
 	}
 	return vault, nil
+}
+
+func (s *Store) SetVaultRemoteURL(ctx context.Context, vaultID int64, remoteURL string) (Vault, error) {
+	if _, err := s.db.ExecContext(ctx, `UPDATE vaults SET remote_url = ?, last_push_error = '' WHERE id = ?`, strings.TrimSpace(remoteURL), vaultID); err != nil {
+		return Vault{}, fmt.Errorf("set vault remote url: %w", err)
+	}
+	return s.VaultByID(ctx, vaultID)
+}
+
+func (s *Store) SetVaultPushResult(ctx context.Context, vaultID int64, pushedAt time.Time, pushErr error) error {
+	lastPushAt := ""
+	lastPushError := ""
+	if pushErr == nil {
+		lastPushAt = pushedAt.UTC().Format(time.RFC3339Nano)
+	} else {
+		lastPushError = pushErr.Error()
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE vaults SET last_push_at = ?, last_push_error = ? WHERE id = ?`, lastPushAt, lastPushError, vaultID); err != nil {
+		return fmt.Errorf("set vault push result: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) ListVaultMembers(ctx context.Context, vaultID int64) ([]VaultMember, error) {

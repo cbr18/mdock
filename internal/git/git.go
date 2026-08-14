@@ -92,6 +92,24 @@ func (c *Client) Log(ctx context.Context, repoPath string, limit int) ([]CommitI
 	return commits, nil
 }
 
+func (c *Client) Push(ctx context.Context, repoPath, remoteURL string) error {
+	remoteURL = strings.TrimSpace(remoteURL)
+	if remoteURL == "" {
+		return fmt.Errorf("remote url is required")
+	}
+	if _, err := c.run(ctx, repoPath, "remote", "get-url", "backup"); err != nil {
+		if _, addErr := c.run(ctx, repoPath, "remote", "add", "backup", remoteURL); addErr != nil {
+			return addErr
+		}
+	} else if _, err := c.run(ctx, repoPath, "remote", "set-url", "backup", remoteURL); err != nil {
+		return err
+	}
+	if _, err := c.run(ctx, repoPath, "push", "backup", "main"); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (c *Client) HasChanges(ctx context.Context, repoPath string) (bool, error) {
 	status, err := c.StatusPorcelain(ctx, repoPath)
 	if err != nil {
@@ -160,6 +178,7 @@ type Queue struct {
 	repoPath string
 	debounce time.Duration
 
+	runMu   sync.Mutex
 	mu      sync.Mutex
 	pending map[string]struct{}
 	timer   *time.Timer
@@ -227,6 +246,14 @@ func (q *Queue) LastError() error {
 	return q.lastErr
 }
 
+func (q *Queue) RunExclusive(ctx context.Context, fn func(context.Context) error) error {
+	q.runMu.Lock()
+	defer q.runMu.Unlock()
+	err := fn(ctx)
+	q.setLastErr(err)
+	return err
+}
+
 func (q *Queue) flush(ctx context.Context) error {
 	q.mu.Lock()
 	paths := make([]string, 0, len(q.pending))
@@ -237,6 +264,9 @@ func (q *Queue) flush(ctx context.Context) error {
 	}
 	q.pending = map[string]struct{}{}
 	q.mu.Unlock()
+
+	q.runMu.Lock()
+	defer q.runMu.Unlock()
 
 	if err := q.client.Add(ctx, q.repoPath, nil); err != nil {
 		q.setLastErr(err)

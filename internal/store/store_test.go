@@ -176,6 +176,33 @@ func TestVaultManagementState(t *testing.T) {
 	if len(members) != 1 || members[0].Login != "alice" || members[0].Role != RoleOwner {
 		t.Fatalf("unexpected members: %+v", members)
 	}
+	withRemote, err := s.SetVaultRemoteURL(ctx, item.ID, "/tmp/backup.git")
+	if err != nil {
+		t.Fatalf("SetVaultRemoteURL() error = %v", err)
+	}
+	if withRemote.RemoteURL != "/tmp/backup.git" || withRemote.LastPushError != "" {
+		t.Fatalf("unexpected remote metadata: %+v", withRemote)
+	}
+	if err := s.SetVaultPushResult(ctx, item.ID, time.Now(), nil); err != nil {
+		t.Fatalf("SetVaultPushResult(success) error = %v", err)
+	}
+	pushed, err := s.VaultByID(ctx, item.ID)
+	if err != nil {
+		t.Fatalf("VaultByID(pushed) error = %v", err)
+	}
+	if pushed.LastPushAt == "" || pushed.LastPushError != "" {
+		t.Fatalf("unexpected push success metadata: %+v", pushed)
+	}
+	if err := s.SetVaultPushResult(ctx, item.ID, time.Now(), context.Canceled); err != nil {
+		t.Fatalf("SetVaultPushResult(error) error = %v", err)
+	}
+	failed, err := s.VaultByID(ctx, item.ID)
+	if err != nil {
+		t.Fatalf("VaultByID(failed) error = %v", err)
+	}
+	if failed.LastPushError == "" {
+		t.Fatalf("expected push error metadata: %+v", failed)
+	}
 	archived, err := s.SetVaultArchived(ctx, item.ID, true)
 	if err != nil {
 		t.Fatalf("SetVaultArchived(true) error = %v", err)
