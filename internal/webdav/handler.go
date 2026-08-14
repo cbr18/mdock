@@ -82,6 +82,7 @@ func NewHandler(cfg Config) http.Handler {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
 	recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+	h.applyCORS(recorder, r)
 	defer func() {
 		h.logger.Info("webdav request",
 			"method", r.Method,
@@ -173,6 +174,10 @@ func (h *Handler) propfind(w http.ResponseWriter, r *http.Request, target target
 	if depth == "" {
 		depth = "1"
 	}
+	if strings.EqualFold(depth, "infinity") {
+		http.Error(w, "depth infinity is not supported; configure Remotely Save to use depth 1", http.StatusForbidden)
+		return
+	}
 	responses := []responseXML{}
 	info, err := h.vaultService.Stat(target.vault.Path, target.rel)
 	if err != nil {
@@ -214,6 +219,11 @@ func (h *Handler) get(w http.ResponseWriter, target target, head bool) {
 
 func (h *Handler) put(w http.ResponseWriter, r *http.Request, target target) {
 	const maxPutBytes = 128 * 1024 * 1024
+	_, statErr := h.vaultService.Stat(target.vault.Path, target.rel)
+	status := http.StatusNoContent
+	if statErr != nil {
+		status = http.StatusCreated
+	}
 	data, err := io.ReadAll(io.LimitReader(r.Body, maxPutBytes+1))
 	if err != nil {
 		http.Error(w, "read body", http.StatusBadRequest)
@@ -229,10 +239,26 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request, target target) {
 		return
 	}
 	h.enqueue(r.Context(), target, []string{target.rel})
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(status)
 }
 
 func (h *Handler) mkcol(w http.ResponseWriter, r *http.Request, target target) {
+	if target.rel == "." {
+		http.Error(w, "cannot create vault root", http.StatusMethodNotAllowed)
+		return
+	}
+	if _, err := h.vaultService.Stat(target.vault.Path, target.rel); err == nil {
+		http.Error(w, "collection already exists", http.StatusMethodNotAllowed)
+		return
+	}
+	parent := path.Dir(target.rel)
+	if parent != "." {
+		info, err := h.vaultService.Stat(target.vault.Path, parent)
+		if err != nil || !info.IsDir {
+			http.Error(w, "parent collection does not exist", http.StatusConflict)
+			return
+		}
+	}
 	if ok := h.withMutationLock(w, r, target, target.rel, func() error {
 		return h.vaultService.Mkdir(target.vault.Path, target.rel)
 	}); !ok {
@@ -245,6 +271,10 @@ func (h *Handler) mkcol(w http.ResponseWriter, r *http.Request, target target) {
 func (h *Handler) delete(w http.ResponseWriter, r *http.Request, target target) {
 	if target.rel == "." {
 		http.Error(w, "cannot delete vault root", http.StatusForbidden)
+		return
+	}
+	if _, err := h.vaultService.Stat(target.vault.Path, target.rel); err != nil {
+		http.NotFound(w, r)
 		return
 	}
 	if ok := h.withMutationLock(w, r, target, target.rel, func() error {
@@ -267,12 +297,48 @@ func (h *Handler) move(w http.ResponseWriter, r *http.Request, target target) {
 		http.Error(w, "invalid destination", http.StatusBadRequest)
 		return
 	}
+	if target.rel == "." || rel == "." {
+		http.Error(w, "cannot move vault root", http.StatusForbidden)
+		return
+	}
+	if _, err := h.vaultService.Stat(target.vault.Path, target.rel); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	overwrite := !strings.EqualFold(r.Header.Get("Overwrite"), "F")
+	destExists := false
+	if _, err := h.vaultService.Stat(target.vault.Path, rel); err == nil {
+		destExists = true
+	}
+	if destExists && !overwrite {
+		http.Error(w, "destination exists", http.StatusPreconditionFailed)
+		return
+	}
+	parent := path.Dir(rel)
+	if parent != "." {
+		info, err := h.vaultService.Stat(target.vault.Path, parent)
+		if err != nil || !info.IsDir {
+			http.Error(w, "destination parent does not exist", http.StatusConflict)
+			return
+		}
+	}
+	if destExists {
+		if ok := h.withMutationLock(w, r, target, rel, func() error {
+			return h.vaultService.Delete(target.vault.Path, rel)
+		}); !ok {
+			return
+		}
+	}
 	if ok := h.withMutationLock(w, r, target, target.rel, func() error {
 		return h.vaultService.Rename(target.vault.Path, target.rel, rel)
 	}); !ok {
 		return
 	}
 	h.enqueue(r.Context(), target, []string{target.rel, rel})
+	if destExists {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -394,26 +460,66 @@ func parseDestination(input string) (string, string, error) {
 }
 
 func makeResponse(slug, rel string, isDir bool, size int64, modTime string) responseXML {
-	href := "/webdav/" + strings.TrimPrefix(path.Clean("/"+slug+"/"+rel), "/")
+	href := webdavHref(slug, rel, isDir)
+	displayName := path.Base(strings.TrimSuffix(rel, "/"))
 	if rel == "." {
-		href = "/webdav/" + slug + "/"
-	}
-	if isDir && !strings.HasSuffix(href, "/") {
-		href += "/"
+		displayName = slug
 	}
 	prop := propstatXML{
 		Prop: propValueXML{
-			DisplayName: path.Base(href),
-			ContentLen:  size,
+			DisplayName: displayName,
 			LastMod:     webdavTime(modTime),
-			ETag:        entityTag(size, modTime),
 		},
 		Status: "HTTP/1.1 200 OK",
 	}
 	if isDir {
 		prop.Prop.ResourceType = collectionXML{Collection: &struct{}{}}
+	} else {
+		prop.Prop.ContentLen = &size
+		prop.Prop.ETag = entityTag(size, modTime)
 	}
 	return responseXML{Href: href, PropStat: prop}
+}
+
+func webdavHref(slug, rel string, isDir bool) string {
+	parts := []string{"", "webdav", slug}
+	if rel != "." && rel != "" {
+		for _, part := range strings.Split(path.Clean(rel), "/") {
+			if part != "" && part != "." {
+				parts = append(parts, part)
+			}
+		}
+	}
+	for i := 1; i < len(parts); i++ {
+		parts[i] = url.PathEscape(parts[i])
+	}
+	href := strings.Join(parts, "/")
+	if isDir && !strings.HasSuffix(href, "/") {
+		href += "/"
+	}
+	return href
+}
+
+func (h *Handler) applyCORS(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if !allowedOrigin(origin) {
+		return
+	}
+	header := w.Header()
+	header.Set("Access-Control-Allow-Origin", origin)
+	header.Set("Access-Control-Allow-Methods", "OPTIONS, PROPFIND, GET, HEAD, PUT, MKCOL, DELETE, MOVE, LOCK, UNLOCK")
+	header.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Depth, Destination, Overwrite, If, Lock-Token, Timeout, Cache-Control, X-Requested-With, X-RS-Test")
+	header.Set("Access-Control-Expose-Headers", "DAV, ETag, Last-Modified, Lock-Token")
+	header.Add("Vary", "Origin")
+}
+
+func allowedOrigin(origin string) bool {
+	switch origin {
+	case "app://obsidian.md", "capacitor://localhost", "http://localhost":
+		return true
+	default:
+		return false
+	}
 }
 
 func setEntityHeaders(w http.ResponseWriter, size int64, modTime string) {
@@ -506,7 +612,7 @@ type propstatXML struct {
 type propValueXML struct {
 	DisplayName  string        `xml:"D:displayname,omitempty"`
 	ResourceType collectionXML `xml:"D:resourcetype"`
-	ContentLen   int64         `xml:"D:getcontentlength"`
+	ContentLen   *int64        `xml:"D:getcontentlength,omitempty"`
 	LastMod      string        `xml:"D:getlastmodified,omitempty"`
 	ETag         string        `xml:"D:getetag,omitempty"`
 }

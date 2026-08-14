@@ -1,6 +1,6 @@
 # Remotely Save WebDAV compatibility hardening
 
-Status: CREATED
+Status: DONE
 Created: 2026-08-14 18:04
 Project: mdock
 Plan: [14_08_2026_18_04_remotely_save_webdav_compatibility.md](../plans/14_08_2026_18_04_remotely_save_webdav_compatibility.md)
@@ -121,7 +121,36 @@ WebDAV MVP уже позволяет подключиться из Obsidian/Remo
 
 ## Результаты валидации
 
-- Пока не выполнялось.
+- `go test ./...` — успешно.
+- `npm test` из `web/` — успешно, `2` теста.
+- `docker compose --env-file test/.env.test.example -f test/docker-compose.yml up -d --build` — успешно, test stack healthy.
+- `./test/run-smoke.sh` — успешно.
+- До исправлений расширенная Remotely Save matrix дала `37 pass / 5 fail`:
+  - raw `href` в `PROPFIND`;
+  - отсутствующий CORS;
+  - `Depth: infinity` ошибочно возвращал `207`.
+- После исправлений расширенная Remotely Save matrix дала `42 pass / 0 fail`.
+- Расширенный Remotely Save сценарий перенесён в `test/smoke/smoke_test.go` и теперь запускается через `./test/run-smoke.sh`.
+- Smoke покрывает:
+  - default `remoteBaseDir = vaultName`;
+  - custom `remoteBaseDir`;
+  - connectivity flow `MKCOL -> PUT 100 bytes -> overwrite PUT 200 bytes -> GET compare -> DELETE file -> DELETE folder`;
+  - `.obsidian/plugins/remotely-save/*`;
+  - `.obsidian/bookmarks.json`;
+  - Unicode/space filename;
+  - underscore filename;
+  - opaque encrypted-looking filename;
+  - `PROPFIND Depth: 1`;
+  - percent-encoded `href`;
+  - `ETag`/`Last-Modified`;
+  - CORS для `app://obsidian.md`, `capacitor://localhost`, `http://localhost`;
+  - wrong password;
+  - `.git` deny;
+  - path traversal deny;
+  - explicit reject для `Depth: infinity`;
+  - параллельные `PUT`/`GET` как `concurrency=5`;
+  - git clean после debounce и наличие `sync: update` commit.
+- Логи test stack проверены фильтром по `database is locked`, `level=ERROR`, `status=5xx`, `panic`, `Authorization`, `Basic`, `password`, `Cookie`, `Set-Cookie` — совпадений нет.
 
 ## Откат
 

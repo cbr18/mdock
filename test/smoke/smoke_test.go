@@ -5,11 +5,13 @@ package smoke
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -100,6 +102,146 @@ func TestRunningTestStack(t *testing.T) {
 	requireWebDAV(t, client, http.MethodPut, webdavBase+"/notes/keep.md", smokeUsername, smokePassword, strings.NewReader("kept for git commit"), http.StatusCreated, "")
 }
 
+func TestRemotelySaveWebDAVCompatibility(t *testing.T) {
+	baseURL := getenv("TEST_BASE_URL", "http://127.0.0.1:18080")
+	adminUsername := getenv("BOOTSTRAP_USERNAME", "admin")
+	adminPassword := getenv("BOOTSTRAP_PASSWORD", "test-password")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New() error = %v", err)
+	}
+	client.Jar = jar
+
+	payload, _ := json.Marshal(map[string]string{"username": adminUsername, "password": adminPassword})
+	requireOK(t, client, http.MethodPost, baseURL+"/api/auth/login", bytes.NewReader(payload))
+
+	suffix := time.Now().UTC().Format("20060102150405")
+	username := "rs-" + suffix
+	password := "rs-password"
+	payload, _ = json.Marshal(map[string]string{"username": username, "password": password})
+	body := requireOK(t, client, http.MethodPost, baseURL+"/api/auth/register", bytes.NewReader(payload))
+	var registerResponse struct {
+		Vault struct {
+			Slug string `json:"slug"`
+		} `json:"vault"`
+	}
+	if err := json.Unmarshal(body, &registerResponse); err != nil {
+		t.Fatalf("decode register response: %v", err)
+	}
+	webdavBase := baseURL + "/webdav/" + registerResponse.Vault.Slug
+
+	requireWebDAV(t, client, http.MethodOptions, webdavBase+"/", username, password, nil, http.StatusNoContent, "")
+	requireWebDAV(t, client, "PROPFIND", webdavBase+"/", username, password, nil, http.StatusMultiStatus, "multistatus")
+
+	remoteBaseDir := "Obsidian%20Vault"
+	requireWebDAV(t, client, "MKCOL", webdavBase+"/"+remoteBaseDir, username, password, nil, http.StatusCreated, "")
+	requireWebDAV(t, client, "PROPFIND", webdavBase+"/"+remoteBaseDir+"/", username, password, nil, http.StatusMultiStatus, "multistatus")
+
+	testDir := remoteBaseDir + "/rs-test-folder-" + suffix
+	testFile := testDir + "/rs-test-file-" + suffix
+	requireWebDAV(t, client, "MKCOL", webdavBase+"/"+testDir, username, password, nil, http.StatusCreated, "")
+	requireWebDAV(t, client, http.MethodPut, webdavBase+"/"+testFile, username, password, bytes.NewReader(bytes.Repeat([]byte{0}, 100)), http.StatusCreated, "")
+	requireWebDAV(t, client, http.MethodPut, webdavBase+"/"+testFile, username, password, bytes.NewReader(bytes.Repeat([]byte{1}, 200)), http.StatusNoContent, "")
+	download := requireWebDAV(t, client, http.MethodGet, webdavBase+"/"+testFile, username, password, nil, http.StatusOK, "")
+	if !bytes.Equal(download, bytes.Repeat([]byte{1}, 200)) {
+		t.Fatalf("downloaded overwritten file mismatch: len=%d", len(download))
+	}
+	requireWebDAV(t, client, http.MethodDelete, webdavBase+"/"+testFile, username, password, nil, http.StatusNoContent, "")
+	requireWebDAV(t, client, http.MethodDelete, webdavBase+"/"+testDir, username, password, nil, http.StatusNoContent, "")
+
+	for _, dir := range []string{".obsidian", ".obsidian/plugins", ".obsidian/plugins/remotely-save"} {
+		requireWebDAV(t, client, "MKCOL", webdavBase+"/"+remoteBaseDir+"/"+dir, username, password, nil, http.StatusCreated, "")
+	}
+	requireWebDAVWithHeaders(t, client, http.MethodPut, webdavBase+"/"+remoteBaseDir+"/.obsidian/plugins/remotely-save/manifest.json", username, password, strings.NewReader(`{"id":"remotely-save"}`), http.StatusCreated, "", map[string]string{"X-RS-Test": "custom-header-ok"})
+	requireWebDAV(t, client, http.MethodPut, webdavBase+"/"+remoteBaseDir+"/.obsidian/plugins/remotely-save/data.json", username, password, strings.NewReader(`{"sync":"config"}`), http.StatusCreated, "")
+	requireWebDAV(t, client, http.MethodPut, webdavBase+"/"+remoteBaseDir+"/.obsidian/bookmarks.json", username, password, strings.NewReader(`[]`), http.StatusCreated, "")
+
+	unicodePath := remoteBaseDir + "/%D0%91%D0%B5%D0%B7%20%D0%BD%D0%B0%D0%B7%D0%B2%D0%B0%D0%BD%D0%B8%D1%8F.md"
+	requireWebDAV(t, client, http.MethodPut, webdavBase+"/"+unicodePath, username, password, strings.NewReader("unicode content"), http.StatusCreated, "")
+	requireWebDAV(t, client, http.MethodPut, webdavBase+"/"+remoteBaseDir+"/_hidden_loose.md", username, password, strings.NewReader("underscore"), http.StatusCreated, "")
+	requireWebDAV(t, client, http.MethodPut, webdavBase+"/"+remoteBaseDir+"/6f4ZALVduD9fQ%3D%3D", username, password, strings.NewReader("opaque"), http.StatusCreated, "")
+
+	propfind := requireWebDAV(t, client, "PROPFIND", webdavBase+"/"+remoteBaseDir+"/", username, password, nil, http.StatusMultiStatus, "")
+	for _, expected := range []string{"Obsidian%20Vault", "getlastmodified", "getetag"} {
+		if !strings.Contains(string(propfind), expected) {
+			t.Fatalf("PROPFIND response missing %q: %s", expected, string(propfind))
+		}
+	}
+
+	req := newWebDAVRequest(t, "MOVE", webdavBase+"/"+unicodePath, username, password, nil)
+	req.Header.Set("Destination", webdavBase+"/"+remoteBaseDir+"/moved.md")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("MOVE unicode file error = %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("MOVE unicode file status = %d", resp.StatusCode)
+	}
+	requireWebDAV(t, client, http.MethodGet, webdavBase+"/"+remoteBaseDir+"/moved.md", username, password, nil, http.StatusOK, "unicode content")
+	requireWebDAV(t, client, http.MethodDelete, webdavBase+"/"+remoteBaseDir+"/moved.md", username, password, nil, http.StatusNoContent, "")
+
+	customRemoteBaseDir := "Custom%20Remote%20Dir"
+	requireWebDAV(t, client, "MKCOL", webdavBase+"/"+customRemoteBaseDir, username, password, nil, http.StatusCreated, "")
+	requireWebDAV(t, client, http.MethodPut, webdavBase+"/"+customRemoteBaseDir+"/note.md", username, password, strings.NewReader("custom base"), http.StatusCreated, "")
+	requireWebDAV(t, client, http.MethodGet, webdavBase+"/"+customRemoteBaseDir+"/note.md", username, password, nil, http.StatusOK, "custom base")
+
+	for _, origin := range []string{"app://obsidian.md", "capacitor://localhost", "http://localhost"} {
+		req, err := http.NewRequest(http.MethodOptions, webdavBase+"/", nil)
+		if err != nil {
+			t.Fatalf("new CORS request: %v", err)
+		}
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Access-Control-Request-Method", "PROPFIND")
+		req.Header.Set("Access-Control-Request-Headers", "authorization,depth,destination,if,lock-token,overwrite,x-rs-test")
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("CORS preflight %s error = %v", origin, err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusNoContent || resp.Header.Get("Access-Control-Allow-Origin") != origin {
+			t.Fatalf("CORS preflight %s status=%d allow-origin=%q", origin, resp.StatusCode, resp.Header.Get("Access-Control-Allow-Origin"))
+		}
+	}
+
+	requireWebDAV(t, client, http.MethodGet, webdavBase+"/", username, "wrong-password", nil, http.StatusUnauthorized, "")
+	requireWebDAV(t, client, "PROPFIND", webdavBase+"/.git/", username, password, nil, http.StatusNotFound, "")
+	requireWebDAV(t, client, http.MethodPut, webdavBase+"/%2e%2e/escape.md", username, password, strings.NewReader("x"), http.StatusBadRequest, "")
+	requireWebDAVWithHeaders(t, client, "PROPFIND", webdavBase+"/"+remoteBaseDir+"/", username, password, nil, http.StatusForbidden, "depth infinity is not supported", map[string]string{"Depth": "infinity"})
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 10)
+	for i := 1; i <= 5; i++ {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := newWebDAVRequest(t, http.MethodPut, fmt.Sprintf("%s/%s/parallel-%d.md", webdavBase, remoteBaseDir, i), username, password, strings.NewReader(fmt.Sprintf("parallel-%d", i)))
+			resp, err := client.Do(req)
+			if err != nil {
+				errs <- err
+				return
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
+				errs <- fmt.Errorf("parallel PUT %d status = %d", i, resp.StatusCode)
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 1; i <= 5; i++ {
+		requireWebDAV(t, client, http.MethodGet, fmt.Sprintf("%s/%s/parallel-%d.md", webdavBase, remoteBaseDir, i), username, password, nil, http.StatusOK, fmt.Sprintf("parallel-%d", i))
+	}
+}
+
 func requireOK(t *testing.T, client *http.Client, method, url string, body *bytes.Reader) []byte {
 	t.Helper()
 	if body == nil {
@@ -129,9 +271,17 @@ func requireOK(t *testing.T, client *http.Client, method, url string, body *byte
 
 func requireWebDAV(t *testing.T, client *http.Client, method, url, username, password string, body io.Reader, status int, contains string) []byte {
 	t.Helper()
+	return requireWebDAVWithHeaders(t, client, method, url, username, password, body, status, contains, nil)
+}
+
+func requireWebDAVWithHeaders(t *testing.T, client *http.Client, method, url, username, password string, body io.Reader, status int, contains string, headers map[string]string) []byte {
+	t.Helper()
 	req := newWebDAVRequest(t, method, url, username, password, body)
 	if method == "PROPFIND" {
 		req.Header.Set("Depth", "1")
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
