@@ -40,6 +40,38 @@ http://<host>/webdav/<vault-slug>/
 
 Use the same login and password in Obsidian WebDAV settings. In production, put mdock behind HTTPS before exposing it outside a trusted network.
 
+## Obsidian Remotely Save
+
+mdock targets the Obsidian Remotely Save plugin as the primary WebDAV client for the MVP.
+
+Recommended Remotely Save settings:
+
+```text
+Remote Service: WebDAV
+Server Address: http://<host>/webdav/<vault-slug>/
+Username: your mdock login
+Password: your mdock password
+Auth Type: basic
+Depth Header Sent To Servers: only supports depth='1'
+Remote Base Dir: leave empty to use the Obsidian vault name, or set a custom folder name
+```
+
+Do not select `supports depth='infinity'` in the MVP. mdock intentionally rejects `Depth: infinity`; Remotely Save should use its default recursive `Depth: 1` mode.
+
+Remotely Save stores files inside `/<remoteBaseDir>/` on the WebDAV server. If `Remote Base Dir` is empty, the plugin uses the local Obsidian vault name, for example:
+
+```text
+/webdav/<vault-slug>/Obsidian Vault/Без названия.md
+```
+
+The server supports the Remotely Save flows covered by the smoke test: connectivity check, overwrite, `.obsidian/plugins/remotely-save/*`, custom remote base dir, Unicode paths, CORS origins used by Obsidian mobile, and parallel writes. Detailed notes live in [docs/remotely-save-webdav-compatibility.md](docs/remotely-save-webdav-compatibility.md).
+
+Troubleshooting:
+
+- If mobile Obsidian cannot connect, make sure the request reaches mdock directly or through a reverse proxy that preserves WebDAV methods and CORS headers.
+- If sync fails after changing `Remote Base Dir`, treat it as a new remote folder; Remotely Save does not move old remote content automatically.
+- If large-file sync fails, keep normal full-file upload behavior for now. mdock does not advertise Nextcloud, Apache partial update or Sabre partial update capabilities in the MVP.
+
 ## Production Docker
 
 Copy `.env.example` to `.env`, change `BOOTSTRAP_PASSWORD`, then run:
