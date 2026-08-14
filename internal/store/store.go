@@ -35,6 +35,14 @@ type Vault struct {
 	Kind      string `json:"kind"`
 	Path      string `json:"path"`
 	Role      string `json:"role,omitempty"`
+	Archived  bool   `json:"archived"`
+	CreatedAt string `json:"created_at,omitempty"`
+}
+
+type VaultMember struct {
+	UserID    int64  `json:"user_id"`
+	Login     string `json:"login"`
+	Role      string `json:"role"`
 	CreatedAt string `json:"created_at,omitempty"`
 }
 
@@ -94,9 +102,11 @@ func (s *Store) init(ctx context.Context) error {
 			slug TEXT NOT NULL UNIQUE,
 			kind TEXT NOT NULL,
 			path TEXT NOT NULL UNIQUE,
+			archived INTEGER NOT NULL DEFAULT 0,
 			created_at TEXT NOT NULL
 		);`,
 		`ALTER TABLE vaults ADD COLUMN name TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE vaults ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;`,
 		`UPDATE vaults SET name = slug WHERE name = '';`,
 		`CREATE TABLE IF NOT EXISTS vault_members (
 			vault_id INTEGER NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
@@ -124,7 +134,7 @@ func (s *Store) init(ctx context.Context) error {
 	}
 	for _, stmt := range statements {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
-			if strings.Contains(stmt, "ALTER TABLE vaults ADD COLUMN name") && strings.Contains(err.Error(), "duplicate column") {
+			if strings.Contains(stmt, "ALTER TABLE vaults ADD COLUMN") && strings.Contains(err.Error(), "duplicate column") {
 				continue
 			}
 			if strings.Contains(stmt, "ALTER TABLE users ADD COLUMN") && strings.Contains(err.Error(), "duplicate column") {
@@ -251,13 +261,13 @@ func (s *Store) CreateVaultForUser(ctx context.Context, userID int64, name, kind
 func (s *Store) PersonalVault(ctx context.Context, userID int64) (Vault, error) {
 	var vault Vault
 	err := s.db.QueryRowContext(ctx, `
-		SELECT vaults.id, vaults.name, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.created_at
+		SELECT vaults.id, vaults.name, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.archived, vaults.created_at
 		FROM vaults
 		JOIN vault_members ON vault_members.vault_id = vaults.id
-		WHERE vault_members.user_id = ? AND vaults.kind = ?
+		WHERE vault_members.user_id = ? AND vaults.kind = ? AND vaults.archived = 0
 		ORDER BY vaults.id
 		LIMIT 1
-	`, userID, VaultKindPersonal).Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.CreatedAt)
+	`, userID, VaultKindPersonal).Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.Archived, &vault.CreatedAt)
 	if err != nil {
 		return Vault{}, err
 	}
@@ -265,14 +275,22 @@ func (s *Store) PersonalVault(ctx context.Context, userID int64) (Vault, error) 
 }
 
 func (s *Store) VaultForUserBySlug(ctx context.Context, userID int64, slug string) (Vault, error) {
+	return s.vaultForUserBySlug(ctx, userID, slug, false)
+}
+
+func (s *Store) VaultForUserBySlugIncludingArchived(ctx context.Context, userID int64, slug string) (Vault, error) {
+	return s.vaultForUserBySlug(ctx, userID, slug, true)
+}
+
+func (s *Store) vaultForUserBySlug(ctx context.Context, userID int64, slug string, includeArchived bool) (Vault, error) {
 	var vault Vault
 	err := s.db.QueryRowContext(ctx, `
-		SELECT vaults.id, vaults.name, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.created_at
+		SELECT vaults.id, vaults.name, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.archived, vaults.created_at
 		FROM vaults
 		JOIN vault_members ON vault_members.vault_id = vaults.id
-		WHERE vault_members.user_id = ? AND vaults.slug = ?
+		WHERE vault_members.user_id = ? AND vaults.slug = ? AND (? OR vaults.archived = 0)
 		LIMIT 1
-	`, userID, slug).Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.CreatedAt)
+	`, userID, slug, includeArchived).Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.Archived, &vault.CreatedAt)
 	if err != nil {
 		return Vault{}, err
 	}
@@ -281,10 +299,10 @@ func (s *Store) VaultForUserBySlug(ctx context.Context, userID int64, slug strin
 
 func (s *Store) ListVaultsForUser(ctx context.Context, userID int64) ([]Vault, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT vaults.id, vaults.name, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.created_at
+		SELECT vaults.id, vaults.name, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.archived, vaults.created_at
 		FROM vaults
 		JOIN vault_members ON vault_members.vault_id = vaults.id
-		WHERE vault_members.user_id = ?
+		WHERE vault_members.user_id = ? AND vaults.archived = 0
 		ORDER BY vaults.slug
 	`, userID)
 	if err != nil {
@@ -294,7 +312,7 @@ func (s *Store) ListVaultsForUser(ctx context.Context, userID int64) ([]Vault, e
 	var vaults []Vault
 	for rows.Next() {
 		var vault Vault
-		if err := rows.Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.CreatedAt); err != nil {
+		if err := rows.Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Role, &vault.Archived, &vault.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan vault: %w", err)
 		}
 		vaults = append(vaults, vault)
@@ -306,7 +324,7 @@ func (s *Store) ListVaultsForUser(ctx context.Context, userID int64) ([]Vault, e
 }
 
 func (s *Store) ListVaults(ctx context.Context) ([]Vault, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, slug, kind, path, created_at FROM vaults ORDER BY slug`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, slug, kind, path, archived, created_at FROM vaults ORDER BY slug`)
 	if err != nil {
 		return nil, fmt.Errorf("list all vaults: %w", err)
 	}
@@ -314,7 +332,7 @@ func (s *Store) ListVaults(ctx context.Context) ([]Vault, error) {
 	var vaults []Vault
 	for rows.Next() {
 		var vault Vault
-		if err := rows.Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.CreatedAt); err != nil {
+		if err := rows.Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Archived, &vault.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan vault: %w", err)
 		}
 		vaults = append(vaults, vault)
@@ -323,6 +341,59 @@ func (s *Store) ListVaults(ctx context.Context) ([]Vault, error) {
 		return nil, fmt.Errorf("iterate all vaults: %w", err)
 	}
 	return vaults, nil
+}
+
+func (s *Store) UpdateVaultName(ctx context.Context, vaultID int64, name string) (Vault, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Vault{}, fmt.Errorf("vault name is required")
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE vaults SET name = ? WHERE id = ?`, name, vaultID); err != nil {
+		return Vault{}, fmt.Errorf("update vault name: %w", err)
+	}
+	return s.VaultByID(ctx, vaultID)
+}
+
+func (s *Store) SetVaultArchived(ctx context.Context, vaultID int64, archived bool) (Vault, error) {
+	if _, err := s.db.ExecContext(ctx, `UPDATE vaults SET archived = ? WHERE id = ?`, archived, vaultID); err != nil {
+		return Vault{}, fmt.Errorf("set vault archived: %w", err)
+	}
+	return s.VaultByID(ctx, vaultID)
+}
+
+func (s *Store) VaultByID(ctx context.Context, vaultID int64) (Vault, error) {
+	var vault Vault
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, slug, kind, path, archived, created_at FROM vaults WHERE id = ?`, vaultID).Scan(&vault.ID, &vault.Name, &vault.Slug, &vault.Kind, &vault.Path, &vault.Archived, &vault.CreatedAt)
+	if err != nil {
+		return Vault{}, err
+	}
+	return vault, nil
+}
+
+func (s *Store) ListVaultMembers(ctx context.Context, vaultID int64) ([]VaultMember, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT users.id, users.login, vault_members.role, vault_members.created_at
+		FROM vault_members
+		JOIN users ON users.id = vault_members.user_id
+		WHERE vault_members.vault_id = ?
+		ORDER BY users.login
+	`, vaultID)
+	if err != nil {
+		return nil, fmt.Errorf("list vault members: %w", err)
+	}
+	defer rows.Close()
+	var members []VaultMember
+	for rows.Next() {
+		var member VaultMember
+		if err := rows.Scan(&member.UserID, &member.Login, &member.Role, &member.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan vault member: %w", err)
+		}
+		members = append(members, member)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate vault members: %w", err)
+	}
+	return members, nil
 }
 
 func (s *Store) Authenticate(ctx context.Context, login, password string) (User, error) {
@@ -540,7 +611,7 @@ func (s *Store) createVaultForUserTx(ctx context.Context, tx *sql.Tx, userID int
 		if _, err := tx.ExecContext(ctx, `UPDATE vaults SET path = ? WHERE id = ?`, path, vaultID); err != nil {
 			return Vault{}, fmt.Errorf("update vault path: %w", err)
 		}
-		return Vault{ID: vaultID, Name: name, Slug: slug, Kind: kind, Path: path, Role: RoleOwner, CreatedAt: now}, nil
+		return Vault{ID: vaultID, Name: name, Slug: slug, Kind: kind, Path: path, Role: RoleOwner, Archived: false, CreatedAt: now}, nil
 	}
 	return Vault{}, fmt.Errorf("unique vault slug not available")
 }

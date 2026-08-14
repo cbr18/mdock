@@ -150,6 +150,65 @@ func TestCreateUserAndVaultSlugCollision(t *testing.T) {
 	}
 }
 
+func TestVaultManagementState(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer s.Close()
+
+	user, item, err := s.CreateUser(ctx, "alice", "secret")
+	if err != nil {
+		t.Fatalf("CreateUser() error = %v", err)
+	}
+	renamed, err := s.UpdateVaultName(ctx, item.ID, "Alice Notes")
+	if err != nil {
+		t.Fatalf("UpdateVaultName() error = %v", err)
+	}
+	if renamed.Name != "Alice Notes" || renamed.Slug != item.Slug || renamed.Path != item.Path {
+		t.Fatalf("unexpected renamed vault: %+v", renamed)
+	}
+	members, err := s.ListVaultMembers(ctx, item.ID)
+	if err != nil {
+		t.Fatalf("ListVaultMembers() error = %v", err)
+	}
+	if len(members) != 1 || members[0].Login != "alice" || members[0].Role != RoleOwner {
+		t.Fatalf("unexpected members: %+v", members)
+	}
+	archived, err := s.SetVaultArchived(ctx, item.ID, true)
+	if err != nil {
+		t.Fatalf("SetVaultArchived(true) error = %v", err)
+	}
+	if !archived.Archived {
+		t.Fatalf("archived flag = false: %+v", archived)
+	}
+	if _, err := s.VaultForUserBySlug(ctx, user.ID, item.Slug); err == nil {
+		t.Fatal("VaultForUserBySlug() found archived vault")
+	}
+	includeArchived, err := s.VaultForUserBySlugIncludingArchived(ctx, user.ID, item.Slug)
+	if err != nil {
+		t.Fatalf("VaultForUserBySlugIncludingArchived() error = %v", err)
+	}
+	if !includeArchived.Archived {
+		t.Fatalf("include archived flag = false: %+v", includeArchived)
+	}
+	vaults, err := s.ListVaultsForUser(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("ListVaultsForUser() error = %v", err)
+	}
+	if len(vaults) != 0 {
+		t.Fatalf("visible vault count = %d, want 0", len(vaults))
+	}
+	restored, err := s.SetVaultArchived(ctx, item.ID, false)
+	if err != nil {
+		t.Fatalf("SetVaultArchived(false) error = %v", err)
+	}
+	if restored.Archived {
+		t.Fatalf("restored archived flag = true: %+v", restored)
+	}
+}
+
 func TestUserAdminDisabledPasswordAndSessionManagement(t *testing.T) {
 	ctx := context.Background()
 	s, err := Open(ctx, t.TempDir())

@@ -99,6 +99,20 @@ func TestRunningTestStack(t *testing.T) {
 		t.Fatalf("created vault path = %q, want stable technical path different from slug %q", createResponse.Vault.Path, createResponse.Vault.Slug)
 	}
 
+	detail := requireOK(t, client, http.MethodGet, baseURL+"/api/vaults/"+createResponse.Vault.Slug, nil)
+	if !strings.Contains(string(detail), "/webdav/"+createResponse.Vault.Slug+"/") {
+		t.Fatalf("vault detail response missing WebDAV path: %s", string(detail))
+	}
+	payload, _ = json.Marshal(map[string]string{"name": "Renamed Obsidian Vault"})
+	renamed := requireOK(t, client, http.MethodPatch, baseURL+"/api/vaults/"+createResponse.Vault.Slug, bytes.NewReader(payload))
+	if !strings.Contains(string(renamed), `"name":"Renamed Obsidian Vault"`) || !strings.Contains(string(renamed), `"slug":"`+createResponse.Vault.Slug+`"`) {
+		t.Fatalf("unexpected rename response: %s", string(renamed))
+	}
+	members := requireOK(t, client, http.MethodGet, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/members", nil)
+	if !strings.Contains(string(members), `"login":"`+smokeUsername+`"`) || !strings.Contains(string(members), `"role":"owner"`) {
+		t.Fatalf("unexpected members response: %s", string(members))
+	}
+
 	webdavBase := baseURL + "/webdav/" + createResponse.Vault.Slug
 	requireWebDAV(t, client, http.MethodOptions, webdavBase+"/", smokeUsername, smokePassword, nil, http.StatusNoContent, "")
 	requireWebDAV(t, client, "PROPFIND", webdavBase+"/", smokeUsername, smokePassword, nil, http.StatusMultiStatus, "multistatus")
@@ -133,6 +147,20 @@ func TestRunningTestStack(t *testing.T) {
 	gitCommitsBody := requireOK(t, client, http.MethodGet, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/git/commits?limit=5", nil)
 	if !strings.Contains(string(gitCommitsBody), "sync: update") {
 		t.Fatalf("git commits response missing sync commit: %s", string(gitCommitsBody))
+	}
+
+	archived := requireOK(t, client, http.MethodPost, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/archive", bytes.NewReader(nil))
+	if !strings.Contains(string(archived), `"archived":true`) {
+		t.Fatalf("archive response missing archived flag: %s", string(archived))
+	}
+	listAfterArchive := requireOK(t, client, http.MethodGet, baseURL+"/api/vaults", nil)
+	if strings.Contains(string(listAfterArchive), `"slug":"`+createResponse.Vault.Slug+`"`) {
+		t.Fatalf("archived vault is visible in list: %s", string(listAfterArchive))
+	}
+	requireWebDAV(t, client, http.MethodGet, webdavBase+"/notes/keep.md", smokeUsername, smokePassword, nil, http.StatusNotFound, "")
+	restored := requireOK(t, client, http.MethodPost, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/unarchive", bytes.NewReader(nil))
+	if !strings.Contains(string(restored), `"archived":false`) {
+		t.Fatalf("unarchive response missing archived flag: %s", string(restored))
 	}
 }
 
@@ -348,7 +376,7 @@ func requireStatus(t *testing.T, client *http.Client, method, url string, body *
 	if err != nil {
 		t.Fatalf("NewRequest(%s) error = %v", url, err)
 	}
-	if method == http.MethodPost {
+	if method == http.MethodPost || method == http.MethodPatch {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := client.Do(req)
@@ -375,7 +403,7 @@ func requireOK(t *testing.T, client *http.Client, method, url string, body *byte
 	if err != nil {
 		t.Fatalf("NewRequest(%s) error = %v", url, err)
 	}
-	if method == http.MethodPost {
+	if method == http.MethodPost || method == http.MethodPatch {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := client.Do(req)

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -36,6 +37,8 @@ type GitStatus struct {
 	QueueLen  int         `json:"queue_len"`
 	LastError string      `json:"last_error,omitempty"`
 }
+
+var ErrForbidden = errors.New("forbidden")
 
 func New(cfg config.Config, st *store.Store, logger *slog.Logger) (*Service, error) {
 	if logger == nil {
@@ -172,6 +175,48 @@ func (s *Service) CreateVault(ctx context.Context, userID int64, name string) (s
 	return item, nil
 }
 
+func (s *Service) VaultDetails(ctx context.Context, userID int64, vaultSlug string) (store.Vault, error) {
+	return s.store.VaultForUserBySlugIncludingArchived(ctx, userID, vaultSlug)
+}
+
+func (s *Service) RenameVault(ctx context.Context, userID int64, vaultSlug, name string) (store.Vault, error) {
+	item, err := s.requireVaultOwner(ctx, userID, vaultSlug)
+	if err != nil {
+		return store.Vault{}, err
+	}
+	updated, err := s.store.UpdateVaultName(ctx, item.ID, name)
+	if err != nil {
+		return store.Vault{}, err
+	}
+	updated.Role = item.Role
+	return updated, nil
+}
+
+func (s *Service) ArchiveVault(ctx context.Context, userID int64, vaultSlug string, archived bool) (store.Vault, error) {
+	item, err := s.requireVaultOwner(ctx, userID, vaultSlug)
+	if err != nil {
+		return store.Vault{}, err
+	}
+	updated, err := s.store.SetVaultArchived(ctx, item.ID, archived)
+	if err != nil {
+		return store.Vault{}, err
+	}
+	updated.Role = item.Role
+	return updated, nil
+}
+
+func (s *Service) VaultMembers(ctx context.Context, userID int64, vaultSlug string) (store.Vault, []store.VaultMember, error) {
+	item, err := s.requireVaultOwner(ctx, userID, vaultSlug)
+	if err != nil {
+		return store.Vault{}, nil, err
+	}
+	members, err := s.store.ListVaultMembers(ctx, item.ID)
+	if err != nil {
+		return store.Vault{}, nil, err
+	}
+	return item, members, nil
+}
+
 func (s *Service) PrepareVault(ctx context.Context, item store.Vault) error {
 	root, err := s.vaultService.EnsureVault(item.Path)
 	if err != nil {
@@ -227,6 +272,17 @@ func (s *Service) GitCommits(ctx context.Context, userID int64, vaultSlug string
 		return store.Vault{}, nil, err
 	}
 	return item, commits, nil
+}
+
+func (s *Service) requireVaultOwner(ctx context.Context, userID int64, vaultSlug string) (store.Vault, error) {
+	item, err := s.store.VaultForUserBySlugIncludingArchived(ctx, userID, vaultSlug)
+	if err != nil {
+		return store.Vault{}, err
+	}
+	if item.Role != store.RoleOwner {
+		return store.Vault{}, ErrForbidden
+	}
+	return item, nil
 }
 
 func (s *Service) gitContext(ctx context.Context, userID int64, vaultSlug string) (store.Vault, string, *appgit.Queue, error) {

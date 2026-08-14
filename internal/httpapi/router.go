@@ -44,6 +44,12 @@ func (h *Handler) routes() (http.Handler, error) {
 		r.Post("/api/auth/password", h.changeOwnPassword)
 		r.Get("/api/vaults", h.vaults)
 		r.Post("/api/vaults", h.createVault)
+		r.Get("/api/vaults/{slug}", h.vaultDetails)
+		r.Patch("/api/vaults/{slug}", h.renameVault)
+		r.Post("/api/vaults/{slug}/archive", h.archiveVault)
+		r.Post("/api/vaults/{slug}/unarchive", h.unarchiveVault)
+		r.Get("/api/vaults/{slug}/webdav", h.vaultWebDAVDetails)
+		r.Get("/api/vaults/{slug}/members", h.vaultMembers)
 		r.Get("/api/vaults/{slug}/git/status", h.gitStatus)
 		r.Get("/api/vaults/{slug}/git/commits", h.gitCommits)
 		r.Group(func(r chi.Router) {

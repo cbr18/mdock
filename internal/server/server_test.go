@@ -234,6 +234,42 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 		t.Fatalf("created vault slug = %q", createResponse.Vault.Slug)
 	}
 
+	detail := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes", nil)
+	req.Host = "notes.example.test"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.AddCookie(cookies[0])
+	srv.Handler().ServeHTTP(detail, req)
+	if detail.Code != http.StatusOK {
+		t.Fatalf("vault detail status = %d body=%s", detail.Code, detail.Body.String())
+	}
+	if !strings.Contains(detail.Body.String(), `"url":"https://notes.example.test/webdav/work-notes/"`) {
+		t.Fatalf("vault detail missing webdav url: %s", detail.Body.String())
+	}
+
+	renameBody, _ := json.Marshal(map[string]string{"name": "Renamed Notes"})
+	rename := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPatch, "/api/vaults/work-notes", bytes.NewReader(renameBody))
+	req.AddCookie(cookies[0])
+	srv.Handler().ServeHTTP(rename, req)
+	if rename.Code != http.StatusOK {
+		t.Fatalf("rename vault status = %d body=%s", rename.Code, rename.Body.String())
+	}
+	if !strings.Contains(rename.Body.String(), `"name":"Renamed Notes"`) || !strings.Contains(rename.Body.String(), `"slug":"work-notes"`) {
+		t.Fatalf("unexpected rename response: %s", rename.Body.String())
+	}
+
+	members := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/members", nil)
+	req.AddCookie(cookies[0])
+	srv.Handler().ServeHTTP(members, req)
+	if members.Code != http.StatusOK {
+		t.Fatalf("vault members status = %d body=%s", members.Code, members.Body.String())
+	}
+	if !strings.Contains(members.Body.String(), `"login":"alice"`) || !strings.Contains(members.Body.String(), `"role":"owner"`) {
+		t.Fatalf("unexpected members response: %s", members.Body.String())
+	}
+
 	put := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPut, "/webdav/work-notes/notes/today.md", strings.NewReader("hello obsidian"))
 	req.SetBasicAuth("alice", "secret")
@@ -292,6 +328,51 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 		t.Fatalf("git commits response missing commit subject: %s", commits.Body.String())
 	}
 
+	archive := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/archive", nil)
+	req.AddCookie(cookies[0])
+	srv.Handler().ServeHTTP(archive, req)
+	if archive.Code != http.StatusOK {
+		t.Fatalf("archive vault status = %d body=%s", archive.Code, archive.Body.String())
+	}
+	if !strings.Contains(archive.Body.String(), `"archived":true`) {
+		t.Fatalf("archive response missing archived flag: %s", archive.Body.String())
+	}
+	archivedList := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults", nil)
+	req.AddCookie(cookies[0])
+	srv.Handler().ServeHTTP(archivedList, req)
+	if archivedList.Code != http.StatusOK {
+		t.Fatalf("archived list status = %d body=%s", archivedList.Code, archivedList.Body.String())
+	}
+	if strings.Contains(archivedList.Body.String(), `"slug":"work-notes"`) {
+		t.Fatalf("archived vault is visible in list: %s", archivedList.Body.String())
+	}
+	archivedWebDAV := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/webdav/work-notes/notes/keep.md", nil)
+	req.SetBasicAuth("alice", "secret")
+	srv.Handler().ServeHTTP(archivedWebDAV, req)
+	if archivedWebDAV.Code != http.StatusNotFound {
+		t.Fatalf("archived webdav status = %d body=%s", archivedWebDAV.Code, archivedWebDAV.Body.String())
+	}
+	archivedDetail := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes", nil)
+	req.AddCookie(cookies[0])
+	srv.Handler().ServeHTTP(archivedDetail, req)
+	if archivedDetail.Code != http.StatusOK || !strings.Contains(archivedDetail.Body.String(), `"archived":true`) {
+		t.Fatalf("archived detail status = %d body=%s", archivedDetail.Code, archivedDetail.Body.String())
+	}
+	unarchive := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/unarchive", nil)
+	req.AddCookie(cookies[0])
+	srv.Handler().ServeHTTP(unarchive, req)
+	if unarchive.Code != http.StatusOK {
+		t.Fatalf("unarchive vault status = %d body=%s", unarchive.Code, unarchive.Body.String())
+	}
+	if !strings.Contains(unarchive.Body.String(), `"archived":false`) {
+		t.Fatalf("unarchive response missing archived flag: %s", unarchive.Body.String())
+	}
+
 	body, _ = json.Marshal(map[string]string{"username": "bob", "password": "secret"})
 	otherRegister := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(body))
@@ -306,6 +387,13 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	srv.Handler().ServeHTTP(hidden, req)
 	if hidden.Code != http.StatusNotFound {
 		t.Fatalf("other user git status code = %d body=%s", hidden.Code, hidden.Body.String())
+	}
+	hiddenDetail := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes", nil)
+	req.AddCookie(otherCookies[0])
+	srv.Handler().ServeHTTP(hiddenDetail, req)
+	if hiddenDetail.Code != http.StatusNotFound {
+		t.Fatalf("other user vault detail code = %d body=%s", hiddenDetail.Code, hiddenDetail.Body.String())
 	}
 }
 
