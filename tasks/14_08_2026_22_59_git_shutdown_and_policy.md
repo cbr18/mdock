@@ -83,4 +83,4 @@ Plan: [14_08_2026_22_59_git_shutdown_and_policy.md](../plans/14_08_2026_22_59_gi
 
 ## Commits
 
-- Будет заполнено после commit.
+- `4dd897d` — Harden git queue shutdown policy.
