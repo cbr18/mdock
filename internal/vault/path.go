@@ -86,6 +86,17 @@ func (s *Service) EnsureVault(vaultPath string) (string, error) {
 	return root, nil
 }
 
+func (s *Service) CheckRoot() error {
+	info, err := os.Stat(s.root)
+	if err != nil {
+		return fmt.Errorf("stat vaults root: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("vaults root is not a directory")
+	}
+	return nil
+}
+
 func (s *Service) Resolve(vaultPath, relPath string) (string, string, error) {
 	root, err := s.EnsureVault(vaultPath)
 	if err != nil {

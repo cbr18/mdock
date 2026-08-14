@@ -40,6 +40,11 @@ type GitStatus struct {
 	LastError string      `json:"last_error,omitempty"`
 }
 
+type Readiness struct {
+	OK     bool              `json:"ok"`
+	Checks map[string]string `json:"checks"`
+}
+
 var ErrForbidden = errors.New("forbidden")
 
 func New(cfg config.Config, st *store.Store, logger *slog.Logger) (*Service, error) {
@@ -109,6 +114,23 @@ func (s *Service) AuthLimiter() *security.RateLimiter {
 
 func (s *Service) Logger() *slog.Logger {
 	return s.logger
+}
+
+func (s *Service) Ready(ctx context.Context) Readiness {
+	checks := map[string]string{
+		"sqlite":     "ok",
+		"vaultsRoot": "ok",
+	}
+	ready := true
+	if err := s.store.DB().PingContext(ctx); err != nil {
+		ready = false
+		checks["sqlite"] = err.Error()
+	}
+	if err := s.vaultService.CheckRoot(); err != nil {
+		ready = false
+		checks["vaultsRoot"] = err.Error()
+	}
+	return Readiness{OK: ready, Checks: checks}
 }
 
 func (s *Service) RegisterUser(ctx context.Context, username, password string) (store.User, store.Vault, string, time.Time, error) {

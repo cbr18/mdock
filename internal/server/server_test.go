@@ -40,6 +40,16 @@ func TestHealthAndLoginFlow(t *testing.T) {
 		t.Fatalf("missing security header X-Content-Type-Options: %q", health.Header().Get("X-Content-Type-Options"))
 	}
 
+	ready := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	srv.Handler().ServeHTTP(ready, req)
+	if ready.Code != http.StatusOK {
+		t.Fatalf("ready status = %d body=%s", ready.Code, ready.Body.String())
+	}
+	if !strings.Contains(ready.Body.String(), `"sqlite":"ok"`) || !strings.Contains(ready.Body.String(), `"vaultsRoot":"ok"`) {
+		t.Fatalf("ready body missing checks: %s", ready.Body.String())
+	}
+
 	body, _ := json.Marshal(map[string]string{"username": "admin", "password": "secret"})
 	login := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))

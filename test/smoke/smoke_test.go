@@ -23,6 +23,10 @@ func TestRunningTestStack(t *testing.T) {
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	requireOK(t, client, http.MethodGet, baseURL+"/healthz", nil)
+	ready := requireOK(t, client, http.MethodGet, baseURL+"/readyz", nil)
+	if !strings.Contains(string(ready), `"sqlite":"ok"`) || !strings.Contains(string(ready), `"vaultsRoot":"ok"`) {
+		t.Fatalf("readyz response missing checks: %s", string(ready))
+	}
 
 	jar, err := cookiejar.New(nil)
 	if err != nil {

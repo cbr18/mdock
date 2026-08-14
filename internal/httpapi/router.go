@@ -35,7 +35,9 @@ func New(service *app.Service, logger *slog.Logger) (http.Handler, error) {
 func (h *Handler) routes() (http.Handler, error) {
 	r := chi.NewRouter()
 	r.Use(h.securityHeaders)
+	r.Use(h.requestLogger)
 	r.Get("/healthz", h.health)
+	r.Get("/readyz", h.ready)
 	r.With(h.limitAPIBody).Post("/api/auth/register", h.register)
 	r.With(h.limitAPIBody).Post("/api/auth/login", h.login)
 	r.Group(func(r chi.Router) {
@@ -82,6 +84,15 @@ func (h *Handler) routes() (http.Handler, error) {
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) ready(w http.ResponseWriter, r *http.Request) {
+	readiness := h.app.Ready(r.Context())
+	if !readiness.OK {
+		writeJSON(w, http.StatusServiceUnavailable, readiness)
+		return
+	}
+	writeJSON(w, http.StatusOK, readiness)
 }
 
 func (h *Handler) staticHandler() http.Handler {

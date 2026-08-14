@@ -28,6 +28,13 @@ npm run dev
 
 The Vite dev server proxies `/api`, `/healthz` and `/webdav` to the Go backend.
 
+Operational checks:
+
+```text
+GET /healthz
+GET /readyz
+```
+
 ## Web UI And WebDAV
 
 Open the web UI, register or log in, then create a vault from the vault dashboard.
