@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net/url"
@@ -50,6 +51,9 @@ var (
 	ErrForbidden           = errors.New("forbidden")
 	ErrInvalidRemoteURL    = errors.New("invalid remote url")
 	ErrRemoteNotConfigured = errors.New("remote not configured")
+	ErrRegistrationClosed  = errors.New("registration closed")
+	ErrInvalidSetupToken   = errors.New("invalid setup token")
+	ErrLastActiveAdmin     = errors.New("last active admin")
 )
 
 func New(cfg config.Config, st *store.Store, logger *slog.Logger) (*Service, error) {
@@ -138,8 +142,18 @@ func (s *Service) Ready(ctx context.Context) Readiness {
 	return Readiness{OK: ready, Checks: checks}
 }
 
-func (s *Service) RegisterUser(ctx context.Context, username, password string) (store.User, store.Vault, string, time.Time, error) {
-	user, item, err := s.store.CreateUser(ctx, username, password)
+func (s *Service) RegisterUser(ctx context.Context, username, password, setupToken string) (store.User, store.Vault, string, time.Time, error) {
+	count, err := s.store.CountUsers(ctx)
+	if err != nil {
+		return store.User{}, store.Vault{}, "", time.Time{}, err
+	}
+	if count > 0 {
+		return store.User{}, store.Vault{}, "", time.Time{}, ErrRegistrationClosed
+	}
+	if s.cfg.FirstAdminToken != "" && subtle.ConstantTimeCompare([]byte(setupToken), []byte(s.cfg.FirstAdminToken)) != 1 {
+		return store.User{}, store.Vault{}, "", time.Time{}, ErrInvalidSetupToken
+	}
+	user, item, err := s.store.CreateAdminUser(ctx, username, password)
 	if err != nil {
 		return store.User{}, store.Vault{}, "", time.Time{}, err
 	}
@@ -151,6 +165,17 @@ func (s *Service) RegisterUser(ctx context.Context, username, password string) (
 		return store.User{}, store.Vault{}, "", time.Time{}, err
 	}
 	return user, item, sessionID, expiresAt, nil
+}
+
+func (s *Service) CreateUser(ctx context.Context, username, password string) (store.User, store.Vault, error) {
+	user, item, err := s.store.CreateUser(ctx, username, password)
+	if err != nil {
+		return store.User{}, store.Vault{}, err
+	}
+	if err := s.PrepareVault(ctx, item); err != nil {
+		return store.User{}, store.Vault{}, err
+	}
+	return user, item, nil
 }
 
 func (s *Service) Login(ctx context.Context, username, password string) (AuthSession, error) {
@@ -195,8 +220,18 @@ func (s *Service) SetUserPassword(ctx context.Context, login, password string) e
 }
 
 func (s *Service) SetUserDisabled(ctx context.Context, login string, disabled bool) error {
-	if _, err := s.store.GetUserByLogin(ctx, login); err != nil {
+	user, err := s.store.GetUserByLogin(ctx, login)
+	if err != nil {
 		return err
+	}
+	if disabled && user.IsAdmin && !user.Disabled {
+		activeAdmins, err := s.store.CountActiveAdmins(ctx)
+		if err != nil {
+			return err
+		}
+		if activeAdmins <= 1 {
+			return ErrLastActiveAdmin
+		}
 	}
 	if err := s.store.SetUserDisabled(ctx, login, disabled); err != nil {
 		return err

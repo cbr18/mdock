@@ -50,17 +50,20 @@ func TestRunningTestStack(t *testing.T) {
 	if err := json.Unmarshal(body, &response); err != nil {
 		t.Fatalf("decode vaults response: %v", err)
 	}
-	if len(response.Vaults) != 1 {
-		t.Fatalf("vault count = %d, want 1", len(response.Vaults))
+	foundPersonal := false
+	for _, item := range response.Vaults {
+		if item.Name == username && item.Slug == username && item.Kind == "personal" && item.Role == "owner" {
+			foundPersonal = true
+			break
+		}
 	}
-	if response.Vaults[0].Name != username || response.Vaults[0].Slug != username || response.Vaults[0].Kind != "personal" || response.Vaults[0].Role != "owner" {
-		t.Fatalf("unexpected personal vault: %+v", response.Vaults[0])
+	if !foundPersonal {
+		t.Fatalf("personal vault for %q not found: %+v", username, response.Vaults)
 	}
 
 	smokeUsername := "smoke-" + time.Now().UTC().Format("20060102150405")
 	smokePassword := "smoke-password"
-	payload, _ = json.Marshal(map[string]string{"username": smokeUsername, "password": smokePassword})
-	body = requireOK(t, client, http.MethodPost, baseURL+"/api/auth/register", bytes.NewReader(payload))
+	body = adminCreateUser(t, client, baseURL, smokeUsername, smokePassword)
 	var registerResponse struct {
 		Vault struct {
 			Name string `json:"name"`
@@ -80,6 +83,9 @@ func TestRunningTestStack(t *testing.T) {
 	if registerResponse.Vault.Path == "" || registerResponse.Vault.Path == registerResponse.Vault.Slug {
 		t.Fatalf("registered personal vault path = %q, want stable technical path different from slug %q", registerResponse.Vault.Path, registerResponse.Vault.Slug)
 	}
+	client = newSessionClient(t)
+	payload, _ = json.Marshal(map[string]string{"username": smokeUsername, "password": smokePassword})
+	requireOK(t, client, http.MethodPost, baseURL+"/api/auth/login", bytes.NewReader(payload))
 
 	payload, _ = json.Marshal(map[string]string{"name": "Obsidian Vault"})
 	body = requireOK(t, client, http.MethodPost, baseURL+"/api/vaults", bytes.NewReader(payload))
@@ -186,8 +192,7 @@ func TestRemotelySaveWebDAVCompatibility(t *testing.T) {
 	suffix := time.Now().UTC().Format("20060102150405")
 	username := "rs-" + suffix
 	password := "rs-password"
-	payload, _ = json.Marshal(map[string]string{"username": username, "password": password})
-	body := requireOK(t, client, http.MethodPost, baseURL+"/api/auth/register", bytes.NewReader(payload))
+	body := adminCreateUser(t, client, baseURL, username, password)
 	var registerResponse struct {
 		Vault struct {
 			Slug string `json:"slug"`
@@ -321,8 +326,9 @@ func TestAdminUserManagementAPI(t *testing.T) {
 	username := "admin-api-" + suffix
 	password := "old-password"
 	userClient := newSessionClient(t)
+	adminCreateUser(t, adminClient, baseURL, username, password)
 	payload, _ = json.Marshal(map[string]string{"username": username, "password": password})
-	requireOK(t, userClient, http.MethodPost, baseURL+"/api/auth/register", bytes.NewReader(payload))
+	requireOK(t, userClient, http.MethodPost, baseURL+"/api/auth/login", bytes.NewReader(payload))
 
 	requireStatus(t, userClient, http.MethodGet, baseURL+"/api/admin/users", nil, http.StatusForbidden)
 	users := requireOK(t, adminClient, http.MethodGet, baseURL+"/api/admin/users", nil)
@@ -343,6 +349,7 @@ func TestAdminUserManagementAPI(t *testing.T) {
 	requireLoginStatus(t, baseURL, username, "new-password", http.StatusUnauthorized)
 	requireOK(t, adminClient, http.MethodPost, baseURL+"/api/admin/users/"+username+"/enable", bytes.NewReader(nil))
 	requireLoginStatus(t, baseURL, username, "new-password", http.StatusOK)
+	requireStatus(t, adminClient, http.MethodPost, baseURL+"/api/admin/users/"+adminUsername+"/disable", nil, http.StatusConflict)
 
 	payload, _ = json.Marshal(map[string]string{"password": "admin-reset"})
 	requireOK(t, adminClient, http.MethodPost, baseURL+"/api/admin/users/"+username+"/password", bytes.NewReader(payload))
@@ -353,6 +360,12 @@ func TestAdminUserManagementAPI(t *testing.T) {
 	requireOK(t, revokeClient, http.MethodPost, baseURL+"/api/auth/login", bytes.NewReader(payload))
 	requireOK(t, adminClient, http.MethodPost, baseURL+"/api/admin/users/"+username+"/sessions/revoke", bytes.NewReader(nil))
 	requireStatus(t, revokeClient, http.MethodGet, baseURL+"/api/auth/me", nil, http.StatusUnauthorized)
+}
+
+func adminCreateUser(t *testing.T, client *http.Client, baseURL, username, password string) []byte {
+	t.Helper()
+	payload, _ := json.Marshal(map[string]string{"username": username, "password": password})
+	return requireOK(t, client, http.MethodPost, baseURL+"/api/admin/users", bytes.NewReader(payload))
 }
 
 func newSessionClient(t *testing.T) *http.Client {
@@ -380,7 +393,7 @@ func requireStatus(t *testing.T, client *http.Client, method, url string, body *
 	if err != nil {
 		t.Fatalf("NewRequest(%s) error = %v", url, err)
 	}
-	if method == http.MethodPost || method == http.MethodPatch {
+	if method == http.MethodPost || method == http.MethodPatch || method == http.MethodPut {
 		req.Header.Set("Content-Type", "application/json")
 		addCSRFHeader(client, req)
 	}
@@ -408,7 +421,7 @@ func requireOK(t *testing.T, client *http.Client, method, url string, body *byte
 	if err != nil {
 		t.Fatalf("NewRequest(%s) error = %v", url, err)
 	}
-	if method == http.MethodPost || method == http.MethodPatch {
+	if method == http.MethodPost || method == http.MethodPatch || method == http.MethodPut {
 		req.Header.Set("Content-Type", "application/json")
 		addCSRFHeader(client, req)
 	}

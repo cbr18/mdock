@@ -12,6 +12,7 @@ services:
       HTTP_ADDR: ":8080"
       VAULTS_ROOT: "/vaults"
       DATA_DIR: "/data"
+      BACKUP_DIR: "/backups"
       GIT_BIN: "${GIT_BIN:-git}"
       COMMIT_DEBOUNCE: "${COMMIT_DEBOUNCE:-1s}"
       LOCK_TTL: "${LOCK_TTL:-10s}"
@@ -26,6 +27,7 @@ services:
     volumes:
       - mdock_test_vaults:/vaults
       - mdock_test_data:/data
+      - mdock_test_backups:/backups
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
       interval: 5s
@@ -36,3 +38,4 @@ services:
 volumes:
   mdock_test_vaults:
   mdock_test_data:
+  mdock_test_backups:

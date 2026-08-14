@@ -162,7 +162,9 @@ SQLite обязателен начиная с MVP, потому что users, se
 - debounce intervals;
 - lock TTL;
 - cookie/session настройки;
-- режим разработки/production.
+- режим разработки/production;
+- first-admin setup token;
+- путь к папке SQL-бэкапов.
 
 SQLite должен включать WAL mode:
 
@@ -172,13 +174,16 @@ PRAGMA journal_mode=WAL;
 
 Это нужно сразу, потому что web, WebDAV, fsnotify и git worker будут параллельно читать/писать runtime-state.
 
+Схема БД должна применяться через версионированные миграции. Перед production deploy должен создаваться SQL backup с DDL и DML в отдельной backup-папке. Git для этого не используется, потому что SQLite хранит runtime-state приложения, а не markdown-содержимое vault.
+
 ### Docker/config
 
 - Приложение должно удобно запускаться в Docker.
 - Все основные параметры должны задаваться через env.
 - `.env` должен быть удобным способом настройки docker-compose/dev deployment.
-- Vaults root и data-dir должны быть отдельными volume/bind mount.
-- Git remote backup/sync не входит в MVP, но конфигурация не должна мешать добавить его позже.
+- Vaults root, data-dir и backup-dir должны быть отдельными volume/bind mount.
+- Manual git remote backup доступен через server API. Auto-push можно добавлять только если remote настроен; отсутствие remote не должно считаться ошибкой.
+- Стратегия git для vault'ов описана в [git-vaults.md](git-vaults.md).
 
 ### Безопасность путей и файлов
 
@@ -240,6 +245,10 @@ CRDT применяется **только к документам в режим
 - WebDAV использует Basic Auth.
 - Web и WebDAV проверяют один и тот же логин/пароль по одной таблице пользователей.
 - Пароли хранятся только как хэши: bcrypt или argon2.
+- Первый пользователь в пустой БД создаётся через setup-регистрацию и становится admin.
+- После появления первого пользователя публичная регистрация закрыта; новых пользователей создаёт admin.
+- Если задан `FIRST_ADMIN_TOKEN`, setup-регистрация первого admin требует этот token.
+- Нельзя отключить последнего активного admin.
 - JWT в MVP не используется.
 - Nginx перед приложением может делать TLS termination и reverse proxy, но не является auth layer.
 

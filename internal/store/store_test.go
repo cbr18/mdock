@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -63,6 +65,36 @@ func TestStoreBootstrapAuthenticateAndSession(t *testing.T) {
 	}
 	if vault.Path == "admin" || vault.Path == "" {
 		t.Fatalf("personal vault path = %q, want stable technical path", vault.Path)
+	}
+}
+
+func TestBackupSQLIncludesDDLAndDML(t *testing.T) {
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	s, err := Open(ctx, dataDir)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	if err := s.BootstrapUser(ctx, "admin", "secret"); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	path, err := BackupSQL(ctx, dataDir, t.TempDir(), time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BackupSQL() error = %v", err)
+	}
+	dump, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(backup) error = %v", err)
+	}
+	text := string(dump)
+	for _, expected := range []string{"CREATE TABLE users", "CREATE TABLE vaults", "INSERT INTO \"users\"", "'admin'"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("backup missing %q:\n%s", expected, text)
+		}
 	}
 }
 

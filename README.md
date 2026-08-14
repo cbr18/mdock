@@ -19,6 +19,8 @@ VAULTS_ROOT=/tmp/mdock-vaults DATA_DIR=/tmp/mdock-data \
 go run ./cmd/mdock
 ```
 
+For production, prefer leaving `BOOTSTRAP_USERNAME` and `BOOTSTRAP_PASSWORD` empty and creating the first admin through setup registration. See [docs/deployment.md](docs/deployment.md).
+
 Run frontend with hot reload:
 
 ```bash
@@ -91,15 +93,23 @@ GET /api/vaults/<vault-slug>/git/remote
 
 mdock does not store git credentials in MVP. URLs with embedded userinfo such as `https://user:token@host/repo.git` are rejected. Use server-side SSH keys, a local bare repo path, or a credential helper configured outside mdock.
 
+Remote push is manual in the current server API. Future auto-push must run only when a remote is configured and must not turn a missing remote into an error. The full vault git model is documented in [docs/git-vaults.md](docs/git-vaults.md).
+
+## API And Deployment Docs
+
+- Server API contract: [docs/server-api.md](docs/server-api.md)
+- Deployment, SQL backups and CI/CD: [docs/deployment.md](docs/deployment.md)
+- Git model for vaults: [docs/git-vaults.md](docs/git-vaults.md)
+
 ## Production Docker
 
-Copy `.env.example` to `.env`, change `BOOTSTRAP_PASSWORD`, then run:
+Copy `.env.example` to `.env`, configure `FIRST_ADMIN_TOKEN` for first-admin setup if the service is reachable outside a trusted local network, then run:
 
 ```bash
 docker compose up -d --build
 ```
 
-The root `docker-compose.yml` is the production stack. It mounts separate volumes for `/vaults` and `/data`.
+The root `docker-compose.yml` is the production stack. It mounts separate volumes for `/vaults`, `/data` and `/backups`.
 Security-related limits can be configured through env:
 
 ```text
@@ -107,6 +117,12 @@ API_BODY_LIMIT_BYTES=1048576
 WEBDAV_BODY_LIMIT_BYTES=52428800
 AUTH_RATE_LIMIT_ATTEMPTS=20
 AUTH_RATE_LIMIT_WINDOW=1m
+```
+
+Create a SQL backup of app runtime state:
+
+```bash
+./scripts/backup-sql.sh
 ```
 
 ## Test Stack

@@ -12,11 +12,13 @@ type Config struct {
 	VaultsRoot            string
 	DataDir               string
 	GitBin                string
+	BackupDir             string
 	CommitDebounce        time.Duration
 	LockTTL               time.Duration
 	SessionTTL            time.Duration
 	BootstrapUsername     string
 	BootstrapPassword     string
+	FirstAdminToken       string
 	CookieSecure          bool
 	APIBodyLimitBytes     int64
 	WebDAVBodyLimitBytes  int64
@@ -30,6 +32,7 @@ func Load() (Config, error) {
 		VaultsRoot:            getEnv("VAULTS_ROOT", "/vaults"),
 		DataDir:               getEnv("DATA_DIR", "/data"),
 		GitBin:                getEnv("GIT_BIN", "git"),
+		BackupDir:             getEnv("BACKUP_DIR", "/backups"),
 		CommitDebounce:        5 * time.Second,
 		LockTTL:               30 * time.Second,
 		SessionTTL:            24 * time.Hour,
@@ -65,15 +68,16 @@ func Load() (Config, error) {
 
 	cfg.BootstrapUsername = os.Getenv("BOOTSTRAP_USERNAME")
 	cfg.BootstrapPassword = os.Getenv("BOOTSTRAP_PASSWORD")
+	cfg.FirstAdminToken = os.Getenv("FIRST_ADMIN_TOKEN")
 	return cfg, nil
 }
 
 func (c Config) ValidateBootstrap() error {
-	if c.BootstrapUsername == "" {
-		return fmt.Errorf("BOOTSTRAP_USERNAME is required")
+	if c.BootstrapUsername == "" && c.BootstrapPassword == "" {
+		return nil
 	}
-	if c.BootstrapPassword == "" {
-		return fmt.Errorf("BOOTSTRAP_PASSWORD is required")
+	if c.BootstrapUsername == "" || c.BootstrapPassword == "" {
+		return fmt.Errorf("BOOTSTRAP_USERNAME and BOOTSTRAP_PASSWORD must be set together")
 	}
 	return nil
 }

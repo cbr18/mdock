@@ -6,10 +6,17 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/cbr/mdock/internal/app"
+	"github.com/cbr/mdock/internal/store"
 	"github.com/go-chi/chi/v5"
 )
 
 type setPasswordRequest struct {
+	Password string `json:"password"`
+}
+
+type createUserRequest struct {
+	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
@@ -32,6 +39,32 @@ func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {
 		response = append(response, userResponse{ID: user.ID, Login: user.Login, IsAdmin: user.IsAdmin, Disabled: user.Disabled})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"users": response})
+}
+
+func (h *Handler) adminCreateUser(w http.ResponseWriter, r *http.Request) {
+	var req createUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
+		return
+	}
+	if req.Username == "" || req.Password == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "login_and_password_required"})
+		return
+	}
+	user, item, err := h.app.CreateUser(r.Context(), req.Username, req.Password)
+	if errors.Is(err, store.ErrUserExists) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "user_exists"})
+		return
+	}
+	if err != nil {
+		h.logger.Error("admin create user", "error", err)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_user"})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"user":  userResponse{ID: user.ID, Login: user.Login, IsAdmin: user.IsAdmin, Disabled: user.Disabled},
+		"vault": item,
+	})
 }
 
 func (h *Handler) adminSetPassword(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +101,10 @@ func (h *Handler) adminSetUserDisabled(w http.ResponseWriter, r *http.Request, d
 	if err := h.app.SetUserDisabled(r.Context(), chi.URLParam(r, "login"), disabled); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.NotFound(w, r)
+			return
+		}
+		if errors.Is(err, app.ErrLastActiveAdmin) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "last_active_admin"})
 			return
 		}
 		h.logger.Error("admin set user disabled", "error", err)

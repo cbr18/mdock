@@ -30,7 +30,7 @@ func (s *Service) Acquire(ctx context.Context, vaultID int64, path, owner, sourc
 		return Lock{}, fmt.Errorf("vault id, path, owner and source are required")
 	}
 	now := s.now().UTC()
-	if err := s.cleanupExpired(ctx, now); err != nil {
+	if _, err := s.CleanupExpired(ctx, now); err != nil {
 		return Lock{}, err
 	}
 
@@ -91,12 +91,12 @@ func (s *Service) Release(ctx context.Context, vaultID int64, path, owner string
 	return nil
 }
 
-func (s *Service) cleanupExpired(ctx context.Context, now time.Time) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM file_locks WHERE expires_at <= ?`, now.Format(time.RFC3339Nano))
+func (s *Service) CleanupExpired(ctx context.Context, now time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM file_locks WHERE expires_at <= ?`, now.UTC().Format(time.RFC3339Nano))
 	if err != nil {
-		return fmt.Errorf("cleanup expired locks: %w", err)
+		return 0, fmt.Errorf("cleanup expired locks: %w", err)
 	}
-	return nil
+	return res.RowsAffected()
 }
 
 var (

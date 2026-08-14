@@ -85,72 +85,8 @@ func (s *Store) DB() *sql.DB {
 }
 
 func (s *Store) init(ctx context.Context) error {
-	statements := []string{
-		`PRAGMA journal_mode=WAL;`,
-		`PRAGMA foreign_keys=ON;`,
-		`PRAGMA busy_timeout=5000;`,
-		`CREATE TABLE IF NOT EXISTS users (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			login TEXT NOT NULL UNIQUE,
-			password_hash TEXT NOT NULL,
-			is_admin INTEGER NOT NULL DEFAULT 0,
-			disabled INTEGER NOT NULL DEFAULT 0,
-			created_at TEXT NOT NULL
-		);`,
-		`ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;`,
-		`ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0;`,
-		`CREATE TABLE IF NOT EXISTS vaults (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL DEFAULT '',
-			slug TEXT NOT NULL UNIQUE,
-			kind TEXT NOT NULL,
-			path TEXT NOT NULL UNIQUE,
-			archived INTEGER NOT NULL DEFAULT 0,
-			remote_url TEXT NOT NULL DEFAULT '',
-			last_push_at TEXT NOT NULL DEFAULT '',
-			last_push_error TEXT NOT NULL DEFAULT '',
-			created_at TEXT NOT NULL
-		);`,
-		`ALTER TABLE vaults ADD COLUMN name TEXT NOT NULL DEFAULT '';`,
-		`ALTER TABLE vaults ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;`,
-		`ALTER TABLE vaults ADD COLUMN remote_url TEXT NOT NULL DEFAULT '';`,
-		`ALTER TABLE vaults ADD COLUMN last_push_at TEXT NOT NULL DEFAULT '';`,
-		`ALTER TABLE vaults ADD COLUMN last_push_error TEXT NOT NULL DEFAULT '';`,
-		`UPDATE vaults SET name = slug WHERE name = '';`,
-		`CREATE TABLE IF NOT EXISTS vault_members (
-			vault_id INTEGER NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
-			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			role TEXT NOT NULL,
-			created_at TEXT NOT NULL,
-			PRIMARY KEY (vault_id, user_id)
-		);`,
-		`CREATE TABLE IF NOT EXISTS sessions (
-			id TEXT PRIMARY KEY,
-			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			expires_at TEXT NOT NULL,
-			created_at TEXT NOT NULL
-		);`,
-		`DROP TABLE IF EXISTS file_locks;`,
-		`CREATE TABLE IF NOT EXISTS file_locks (
-			vault_id INTEGER NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
-			path TEXT NOT NULL,
-			owner TEXT NOT NULL,
-			source TEXT NOT NULL,
-			expires_at TEXT NOT NULL,
-			heartbeat_at TEXT NOT NULL,
-			PRIMARY KEY (vault_id, path)
-		);`,
-	}
-	for _, stmt := range statements {
-		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
-			if strings.Contains(stmt, "ALTER TABLE vaults ADD COLUMN") && strings.Contains(err.Error(), "duplicate column") {
-				continue
-			}
-			if strings.Contains(stmt, "ALTER TABLE users ADD COLUMN") && strings.Contains(err.Error(), "duplicate column") {
-				continue
-			}
-			return fmt.Errorf("initialize sqlite: %w", err)
-		}
+	if err := migrate(ctx, s.db); err != nil {
+		return fmt.Errorf("initialize sqlite: %w", err)
 	}
 	return nil
 }
@@ -187,6 +123,14 @@ func (s *Store) BootstrapUser(ctx context.Context, login, password string) error
 }
 
 func (s *Store) CreateUser(ctx context.Context, login, password string) (User, Vault, error) {
+	return s.createUser(ctx, login, password, false)
+}
+
+func (s *Store) CreateAdminUser(ctx context.Context, login, password string) (User, Vault, error) {
+	return s.createUser(ctx, login, password, true)
+}
+
+func (s *Store) createUser(ctx context.Context, login, password string, isAdmin bool) (User, Vault, error) {
 	login = strings.TrimSpace(login)
 	if login == "" || password == "" {
 		return User{}, Vault{}, fmt.Errorf("login and password are required")
@@ -207,7 +151,7 @@ func (s *Store) CreateUser(ctx context.Context, login, password string) (User, V
 	defer tx.Rollback()
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	res, err := tx.ExecContext(ctx, `INSERT INTO users (login, password_hash, created_at) VALUES (?, ?, ?)`, login, string(hash), now)
+	res, err := tx.ExecContext(ctx, `INSERT INTO users (login, password_hash, is_admin, disabled, created_at) VALUES (?, ?, ?, ?, ?)`, login, string(hash), isAdmin, false, now)
 	if err != nil {
 		return User{}, Vault{}, fmt.Errorf("insert user: %w", err)
 	}
@@ -222,7 +166,7 @@ func (s *Store) CreateUser(ctx context.Context, login, password string) (User, V
 	if err := tx.Commit(); err != nil {
 		return User{}, Vault{}, fmt.Errorf("commit create user: %w", err)
 	}
-	return User{ID: userID, Login: login, Password: string(hash), IsAdmin: false, Disabled: false}, vault, nil
+	return User{ID: userID, Login: login, Password: string(hash), IsAdmin: isAdmin, Disabled: false}, vault, nil
 }
 
 func (s *Store) GetUserByLogin(ctx context.Context, login string) (User, error) {
@@ -514,6 +458,30 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 		return nil, fmt.Errorf("iterate users: %w", err)
 	}
 	return users, nil
+}
+
+func (s *Store) CountUsers(ctx context.Context) (int, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM users`).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count users: %w", err)
+	}
+	return count, nil
+}
+
+func (s *Store) CountActiveAdmins(ctx context.Context) (int, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM users WHERE is_admin = 1 AND disabled = 0`).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count active admins: %w", err)
+	}
+	return count, nil
+}
+
+func (s *Store) DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, now.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return 0, fmt.Errorf("delete expired sessions: %w", err)
+	}
+	return res.RowsAffected()
 }
 
 func (s *Store) SetUserAdmin(ctx context.Context, userID int64, isAdmin bool) error {

@@ -23,8 +23,9 @@ COPY --from=backend /out/mdock /usr/local/bin/mdock
 ENV HTTP_ADDR=:8080 \
   VAULTS_ROOT=/vaults \
   DATA_DIR=/data \
+  BACKUP_DIR=/backups \
   GIT_BIN=git
-VOLUME ["/vaults", "/data"]
+VOLUME ["/vaults", "/data", "/backups"]
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -fsS http://127.0.0.1:8080/healthz || exit 1

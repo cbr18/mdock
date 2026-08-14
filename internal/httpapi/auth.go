@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/cbr/mdock/internal/app"
 	"github.com/cbr/mdock/internal/store"
 )
 
 type loginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	SetupToken string `json:"setup_token"`
 }
 
 type changePasswordRequest struct {
@@ -33,10 +35,19 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "rate_limited"})
 		return
 	}
-	user, item, sessionID, expiresAt, err := h.app.RegisterUser(r.Context(), req.Username, req.Password)
+	user, item, sessionID, expiresAt, err := h.app.RegisterUser(r.Context(), req.Username, req.Password, req.SetupToken)
 	if errors.Is(err, store.ErrUserExists) {
 		h.app.RecordAuthFailure(rateKey)
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "user_exists"})
+		return
+	}
+	if errors.Is(err, app.ErrRegistrationClosed) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "registration_closed"})
+		return
+	}
+	if errors.Is(err, app.ErrInvalidSetupToken) {
+		h.app.RecordAuthFailure(rateKey)
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid_setup_token"})
 		return
 	}
 	if err != nil {
@@ -48,7 +59,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 	h.app.ResetAuthFailures(rateKey)
 	h.setSessionCookie(w, sessionID, expiresAt)
 	h.setCSRFCookie(w, expiresAt)
-	writeJSON(w, http.StatusCreated, map[string]any{"status": "ok", "username": user.Login, "vault": item})
+	writeJSON(w, http.StatusCreated, map[string]any{"status": "ok", "username": user.Login, "user": userResponse{ID: user.ID, Login: user.Login, IsAdmin: user.IsAdmin, Disabled: user.Disabled}, "vault": item})
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {

@@ -63,6 +63,7 @@ func (h *Handler) routes() (http.Handler, error) {
 		r.Group(func(r chi.Router) {
 			r.Use(h.requireAdmin)
 			r.Get("/api/admin/users", h.adminUsers)
+			r.Post("/api/admin/users", h.adminCreateUser)
 			r.Post("/api/admin/users/{login}/password", h.adminSetPassword)
 			r.Post("/api/admin/users/{login}/disable", h.adminDisableUser)
 			r.Post("/api/admin/users/{login}/enable", h.adminEnableUser)

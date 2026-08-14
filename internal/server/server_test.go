@@ -102,12 +102,13 @@ func TestAdminUserManagementAPI(t *testing.T) {
 	adminCookies := loginCookies(t, srv, "admin", "secret")
 	body, _ := json.Marshal(map[string]string{"username": "alice", "password": "old"})
 	register := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/users", bytes.NewReader(body))
+	addSessionAuth(req, adminCookies)
 	srv.Handler().ServeHTTP(register, req)
 	if register.Code != http.StatusCreated {
-		t.Fatalf("register status = %d body=%s", register.Code, register.Body.String())
+		t.Fatalf("admin create user status = %d body=%s", register.Code, register.Body.String())
 	}
-	aliceCookies := register.Result().Cookies()
+	aliceCookies := loginCookies(t, srv, "alice", "old")
 
 	forbidden := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/admin/users", nil)
@@ -170,6 +171,14 @@ func TestAdminUserManagementAPI(t *testing.T) {
 	}
 	if loginStatus(t, srv, "alice", "new") != http.StatusOK {
 		t.Fatal("enabled user cannot login")
+	}
+
+	lastAdmin := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/admin/users/admin/disable", nil)
+	addSessionAuth(req, adminCookies)
+	srv.Handler().ServeHTTP(lastAdmin, req)
+	if lastAdmin.Code != http.StatusConflict {
+		t.Fatalf("disable last admin status = %d body=%s", lastAdmin.Code, lastAdmin.Body.String())
 	}
 
 	reset := httptest.NewRecorder()
@@ -432,12 +441,13 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 
 	body, _ = json.Marshal(map[string]string{"username": "bob", "password": "secret"})
 	otherRegister := httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(body))
+	req = httptest.NewRequest(http.MethodPost, "/api/admin/users", bytes.NewReader(body))
+	addSessionAuth(req, cookies)
 	srv.Handler().ServeHTTP(otherRegister, req)
 	if otherRegister.Code != http.StatusCreated {
-		t.Fatalf("register bob status = %d body=%s", otherRegister.Code, otherRegister.Body.String())
+		t.Fatalf("admin create bob status = %d body=%s", otherRegister.Code, otherRegister.Body.String())
 	}
-	otherCookies := otherRegister.Result().Cookies()
+	otherCookies := loginCookies(t, srv, "bob", "secret")
 	hidden := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/git/status", nil)
 	addSessionAuth(req, otherCookies)
@@ -451,6 +461,53 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	srv.Handler().ServeHTTP(hiddenDetail, req)
 	if hiddenDetail.Code != http.StatusNotFound {
 		t.Fatalf("other user vault detail code = %d body=%s", hiddenDetail.Code, hiddenDetail.Body.String())
+	}
+}
+
+func TestSetupRegisterCreatesFirstAdminOnly(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer st.Close()
+	srv, err := New(config.Config{
+		VaultsRoot:      t.TempDir(),
+		GitBin:          "git",
+		SessionTTL:      time.Hour,
+		CommitDebounce:  10 * time.Millisecond,
+		LockTTL:         time.Hour,
+		FirstAdminToken: "setup-secret",
+	}, st, slog.Default())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]string{"username": "admin", "password": "secret", "setup_token": "wrong"})
+	register := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(body))
+	srv.Handler().ServeHTTP(register, req)
+	if register.Code != http.StatusForbidden {
+		t.Fatalf("wrong setup token status = %d body=%s", register.Code, register.Body.String())
+	}
+
+	body, _ = json.Marshal(map[string]string{"username": "admin", "password": "secret", "setup_token": "setup-secret"})
+	register = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(body))
+	srv.Handler().ServeHTTP(register, req)
+	if register.Code != http.StatusCreated {
+		t.Fatalf("setup register status = %d body=%s", register.Code, register.Body.String())
+	}
+	if !strings.Contains(register.Body.String(), `"is_admin":true`) {
+		t.Fatalf("setup register response missing admin flag: %s", register.Body.String())
+	}
+
+	body, _ = json.Marshal(map[string]string{"username": "alice", "password": "secret", "setup_token": "setup-secret"})
+	register = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(body))
+	srv.Handler().ServeHTTP(register, req)
+	if register.Code != http.StatusForbidden {
+		t.Fatalf("second public register status = %d body=%s", register.Code, register.Body.String())
 	}
 }
 
