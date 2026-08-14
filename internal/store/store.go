@@ -52,6 +52,8 @@ func Open(ctx context.Context, dataDir string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	store := &Store{db: db}
 	if err := store.init(ctx); err != nil {
 		_ = db.Close()
@@ -72,6 +74,7 @@ func (s *Store) init(ctx context.Context) error {
 	statements := []string{
 		`PRAGMA journal_mode=WAL;`,
 		`PRAGMA foreign_keys=ON;`,
+		`PRAGMA busy_timeout=5000;`,
 		`CREATE TABLE IF NOT EXISTS users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			login TEXT NOT NULL UNIQUE,

@@ -61,6 +61,11 @@
   - Пользователь может работать только с vaults, где он member.
   - Для MVP default WebDAV target — personal vault пользователя.
   - WebDAV использует Basic Auth с тем же логином/паролем, что web.
+  - Целевой Obsidian WebDAV-клиент Фазы 1 — **Remotely Save**; совместимость с ним должна быть не best-effort, а обязательным критерием приёмки WebDAV-слоя.
+  - Remotely Save по умолчанию синхронизирует данные в подпапку `${vaultName}` на WebDAV server, поэтому сервер должен корректно работать с такой вложенной структурой, пробелами и Unicode в именах файлов/папок.
+  - Для мобильных/браузерных окружений Obsidian WebDAV должен поддерживать CORS для origins `app://obsidian.md`, `capacitor://localhost`, `http://localhost`, WebDAV methods и WebDAV headers.
+  - WebDAV responses должны быть совместимы с Remotely Save: корректные `PROPFIND`/`Multi-Status`, percent-encoded `href`, `ETag`, `Last-Modified`, ожидаемые status codes для create/overwrite/delete/move/lock и безопасная обработка конфликтов без silent data loss.
+  - Детали аудита Remotely Save зафиксированы в [remotely-save-webdav-compatibility.md](remotely-save-webdav-compatibility.md).
 - [ ] Git-слой:
   - Рабочая директория каждого vault = отдельный git-репозиторий.
   - В MVP git remote не обязателен: достаточно локального репозитория в папке каждого vault.

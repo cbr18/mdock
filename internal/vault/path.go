@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 func SafeRelPath(input string) (string, error) {
@@ -33,16 +34,18 @@ func SafeRelPath(input string) (string, error) {
 }
 
 type Entry struct {
-	Name  string `json:"name"`
-	Path  string `json:"path"`
-	IsDir bool   `json:"is_dir"`
-	Size  int64  `json:"size"`
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	IsDir   bool   `json:"is_dir"`
+	Size    int64  `json:"size"`
+	ModTime string `json:"mod_time"`
 }
 
 type Info struct {
-	Path  string `json:"path"`
-	IsDir bool   `json:"is_dir"`
-	Size  int64  `json:"size"`
+	Path    string `json:"path"`
+	IsDir   bool   `json:"is_dir"`
+	Size    int64  `json:"size"`
+	ModTime string `json:"mod_time"`
 }
 
 type Service struct {
@@ -139,7 +142,7 @@ func (s *Service) List(vaultPath, relPath string) ([]Entry, error) {
 		if err != nil {
 			return nil, fmt.Errorf("entry relative path: %w", err)
 		}
-		entries = append(entries, Entry{Name: item.Name(), Path: filepath.ToSlash(path), IsDir: item.IsDir(), Size: info.Size()})
+		entries = append(entries, Entry{Name: item.Name(), Path: filepath.ToSlash(path), IsDir: item.IsDir(), Size: info.Size(), ModTime: info.ModTime().UTC().Format(time.RFC3339Nano)})
 	}
 	return entries, nil
 }
@@ -157,7 +160,7 @@ func (s *Service) Stat(vaultPath, relPath string) (Info, error) {
 	if err != nil {
 		return Info{}, fmt.Errorf("stat relative path: %w", err)
 	}
-	return Info{Path: filepath.ToSlash(path), IsDir: info.IsDir(), Size: info.Size()}, nil
+	return Info{Path: filepath.ToSlash(path), IsDir: info.IsDir(), Size: info.Size(), ModTime: info.ModTime().UTC().Format(time.RFC3339Nano)}, nil
 }
 
 func (s *Service) ReadFile(vaultPath, relPath string) ([]byte, error) {

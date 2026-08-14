@@ -29,6 +29,9 @@
 
 - **Go standard library `net/http` + ручной WebDAV MVP handler**
   - Для MVP реализуем только нужные методы: `OPTIONS`, `PROPFIND`, `GET`, `HEAD`, `PUT`, `MKCOL`, `DELETE`, `MOVE`, `LOCK`, `UNLOCK`.
+  - Основной compatibility target Фазы 1 — Obsidian plugin **Remotely Save**.
+  - Handler должен проходить интеграционные проверки против поведения Remotely Save: `${vaultName}` subfolder, Unicode/space paths, CORS для Obsidian mobile origins, корректные `PROPFIND` href/properties, `ETag`, `Last-Modified`, WebDAV status codes и lock-token handling.
+  - Аудит поведения Remotely Save хранится в [remotely-save-webdav-compatibility.md](remotely-save-webdav-compatibility.md).
   - Handler вызывает слои `store`, `vault`, `locks` и `git`, а не работает с файловой системой напрямую.
   - Все paths проходят через vault-safe resolver:
     - ограничение корнем vault;
@@ -36,7 +39,7 @@
     - защита от path traversal;
     - защита от symlink escape.
   - `423 Locked` возвращается при записи в файл, залоченный другим owner.
-  - Если позже понадобится полная WebDAV совместимость шире Obsidian MVP, можно отдельно оценить переход на `golang.org/x/net/webdav` или расширение текущего handler.
+  - Если позже понадобится WebDAV совместимость шире Remotely Save/Obsidian, можно отдельно оценить переход на `golang.org/x/net/webdav` или расширение текущего handler.
 
 ### Git
 

@@ -80,37 +80,48 @@ func NewHandler(cfg Config) http.Handler {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
+	recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+	defer func() {
+		h.logger.Info("webdav request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", recorder.status,
+			"duration_ms", time.Since(started).Milliseconds(),
+		)
+	}()
+
 	if r.Method == http.MethodOptions {
-		h.options(w)
+		h.options(recorder)
 		return
 	}
-	target, ok := h.authenticate(w, r)
+	target, ok := h.authenticate(recorder, r)
 	if !ok {
 		return
 	}
 
 	switch r.Method {
 	case "PROPFIND":
-		h.propfind(w, r, target)
+		h.propfind(recorder, r, target)
 	case http.MethodGet:
-		h.get(w, target, false)
+		h.get(recorder, target, false)
 	case http.MethodHead:
-		h.get(w, target, true)
+		h.get(recorder, target, true)
 	case http.MethodPut:
-		h.put(w, r, target)
+		h.put(recorder, r, target)
 	case "MKCOL":
-		h.mkcol(w, r, target)
+		h.mkcol(recorder, r, target)
 	case http.MethodDelete:
-		h.delete(w, r, target)
+		h.delete(recorder, r, target)
 	case "MOVE":
-		h.move(w, r, target)
+		h.move(recorder, r, target)
 	case "LOCK":
-		h.lock(w, r, target)
+		h.lock(recorder, r, target)
 	case "UNLOCK":
-		h.unlock(w, r, target)
+		h.unlock(recorder, r, target)
 	default:
-		w.Header().Set("Allow", "OPTIONS, PROPFIND, GET, HEAD, PUT, MKCOL, DELETE, MOVE, LOCK, UNLOCK")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		recorder.Header().Set("Allow", "OPTIONS, PROPFIND, GET, HEAD, PUT, MKCOL, DELETE, MOVE, LOCK, UNLOCK")
+		http.Error(recorder, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
@@ -168,7 +179,7 @@ func (h *Handler) propfind(w http.ResponseWriter, r *http.Request, target target
 		http.NotFound(w, r)
 		return
 	}
-	responses = append(responses, makeResponse(target.vault.Slug, info.Path, info.IsDir, info.Size))
+	responses = append(responses, makeResponse(target.vault.Slug, info.Path, info.IsDir, info.Size, info.ModTime))
 	if info.IsDir && depth != "0" {
 		entries, err := h.vaultService.List(target.vault.Path, target.rel)
 		if err != nil {
@@ -176,19 +187,25 @@ func (h *Handler) propfind(w http.ResponseWriter, r *http.Request, target target
 			return
 		}
 		for _, entry := range entries {
-			responses = append(responses, makeResponse(target.vault.Slug, entry.Path, entry.IsDir, entry.Size))
+			responses = append(responses, makeResponse(target.vault.Slug, entry.Path, entry.IsDir, entry.Size, entry.ModTime))
 		}
 	}
 	writeXML(w, http.StatusMultiStatus, multistatusXML{XMLNS: "DAV:", Responses: responses})
 }
 
 func (h *Handler) get(w http.ResponseWriter, target target, head bool) {
+	info, err := h.vaultService.Stat(target.vault.Path, target.rel)
+	if err != nil || info.IsDir {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
 	data, err := h.vaultService.ReadFile(target.vault.Path, target.rel)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+	setEntityHeaders(w, info.Size, info.ModTime)
 	if head {
 		return
 	}
@@ -289,8 +306,7 @@ func (h *Handler) lock(w http.ResponseWriter, r *http.Request, target target) {
 }
 
 func (h *Handler) unlock(w http.ResponseWriter, r *http.Request, target target) {
-	token := strings.TrimSpace(r.Header.Get("Lock-Token"))
-	token = strings.TrimPrefix(strings.TrimSuffix(token, ">"), "<opaquelocktoken:")
+	token := cleanLockToken(r.Header.Get("Lock-Token"))
 	if token == "" {
 		http.Error(w, "lock token required", http.StatusBadRequest)
 		return
@@ -304,7 +320,12 @@ func (h *Handler) unlock(w http.ResponseWriter, r *http.Request, target target) 
 }
 
 func (h *Handler) withMutationLock(w http.ResponseWriter, r *http.Request, target target, rel string, fn func() error) bool {
-	owner := "webdav:" + target.user.Login + ":" + r.Method
+	owner := requestLockToken(r)
+	release := false
+	if owner == "" {
+		owner = "webdav:" + target.user.Login + ":" + r.Method
+		release = true
+	}
 	if _, err := h.lockService.Acquire(r.Context(), target.vault.ID, rel, owner, "webdav", h.lockTTL); err != nil {
 		if errors.Is(err, locks.ErrLocked) {
 			http.Error(w, "locked", http.StatusLocked)
@@ -315,6 +336,9 @@ func (h *Handler) withMutationLock(w http.ResponseWriter, r *http.Request, targe
 		return false
 	}
 	defer func() {
+		if !release {
+			return
+		}
 		if err := h.lockService.Release(context.Background(), target.vault.ID, rel, owner); err != nil {
 			h.logger.Error("webdav release mutation lock", "error", err, "vault_id", target.vault.ID)
 		}
@@ -369,8 +393,8 @@ func parseDestination(input string) (string, string, error) {
 	return parsePath(input)
 }
 
-func makeResponse(slug, rel string, isDir bool, size int64) responseXML {
-	href := "/webdav/" + path.Clean("/"+slug+"/"+rel)
+func makeResponse(slug, rel string, isDir bool, size int64, modTime string) responseXML {
+	href := "/webdav/" + strings.TrimPrefix(path.Clean("/"+slug+"/"+rel), "/")
 	if rel == "." {
 		href = "/webdav/" + slug + "/"
 	}
@@ -381,6 +405,8 @@ func makeResponse(slug, rel string, isDir bool, size int64) responseXML {
 		Prop: propValueXML{
 			DisplayName: path.Base(href),
 			ContentLen:  size,
+			LastMod:     webdavTime(modTime),
+			ETag:        entityTag(size, modTime),
 		},
 		Status: "HTTP/1.1 200 OK",
 	}
@@ -388,6 +414,60 @@ func makeResponse(slug, rel string, isDir bool, size int64) responseXML {
 		prop.Prop.ResourceType = collectionXML{Collection: &struct{}{}}
 	}
 	return responseXML{Href: href, PropStat: prop}
+}
+
+func setEntityHeaders(w http.ResponseWriter, size int64, modTime string) {
+	w.Header().Set("ETag", entityTag(size, modTime))
+	if parsed, err := time.Parse(time.RFC3339Nano, modTime); err == nil {
+		w.Header().Set("Last-Modified", parsed.UTC().Format(http.TimeFormat))
+	}
+}
+
+func entityTag(size int64, modTime string) string {
+	return fmt.Sprintf(`"%x-%s"`, size, strings.ReplaceAll(modTime, `"`, ""))
+}
+
+func webdavTime(modTime string) string {
+	parsed, err := time.Parse(time.RFC3339Nano, modTime)
+	if err != nil {
+		return ""
+	}
+	return parsed.UTC().Format(http.TimeFormat)
+}
+
+func requestLockToken(r *http.Request) string {
+	if token := cleanLockToken(r.Header.Get("Lock-Token")); token != "" {
+		return token
+	}
+	ifHeader := r.Header.Get("If")
+	start := strings.Index(ifHeader, "<opaquelocktoken:")
+	if start == -1 {
+		return ""
+	}
+	rest := ifHeader[start:]
+	end := strings.Index(rest, ">")
+	if end == -1 {
+		return ""
+	}
+	return cleanLockToken(rest[:end+1])
+}
+
+func cleanLockToken(input string) string {
+	token := strings.TrimSpace(input)
+	token = strings.TrimPrefix(token, "<")
+	token = strings.TrimSuffix(token, ">")
+	token = strings.TrimPrefix(token, "opaquelocktoken:")
+	return strings.TrimSpace(token)
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
 }
 
 func writeXML(w http.ResponseWriter, status int, value any) {
@@ -426,7 +506,9 @@ type propstatXML struct {
 type propValueXML struct {
 	DisplayName  string        `xml:"D:displayname,omitempty"`
 	ResourceType collectionXML `xml:"D:resourcetype"`
-	ContentLen   int64         `xml:"D:getcontentlength,omitempty"`
+	ContentLen   int64         `xml:"D:getcontentlength"`
+	LastMod      string        `xml:"D:getlastmodified,omitempty"`
+	ETag         string        `xml:"D:getetag,omitempty"`
 }
 
 type collectionXML struct {
