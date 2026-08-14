@@ -98,4 +98,4 @@ Plan: [14_08_2026_21_00_server_production_readiness.md](../plans/14_08_2026_21_0
 
 ## Commits
 
-- `666729a` — Prepare server for production deployment.
+- `0872140` — Prepare server for production deployment.
