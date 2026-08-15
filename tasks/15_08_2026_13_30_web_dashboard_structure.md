@@ -71,4 +71,4 @@ Plan: [15_08_2026_13_30_web_dashboard_structure.md](../plans/15_08_2026_13_30_we
 
 ## Commits
 
-- Будет заполнено после commit.
+- `10ad272` — Structure web dashboard frontend.
