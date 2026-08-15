@@ -4,12 +4,21 @@ import { listVaults } from './api/vaults.js';
 import { AppShell } from './components/layout/AppShell.jsx';
 import { Topbar } from './components/layout/Topbar.jsx';
 import { AuthPage } from './features/auth/AuthPage.jsx';
+import { ThemeProvider } from './features/theme/ThemeProvider.jsx';
 import { AccountPage } from './pages/AccountPage.jsx';
 import { AdminUsersPage } from './pages/AdminUsersPage.jsx';
 import { DashboardPage } from './pages/DashboardPage.jsx';
 import { VaultPage } from './pages/VaultPage.jsx';
 
 export default function App() {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
+  );
+}
+
+function AppContent() {
   const [user, setUser] = useState(null);
   const [vaults, setVaults] = useState([]);
   const [message, setMessage] = useState('');
@@ -41,7 +50,8 @@ export default function App() {
   }
 
   async function handleAuthenticated(nextUser) {
-    setUser(nextUser);
+    const currentUser = await me().catch(() => nextUser);
+    setUser(currentUser);
     await loadVaults();
     setPage({ name: 'dashboard' });
   }
@@ -84,7 +94,7 @@ export default function App() {
           setMessage={setMessage}
         />
       ) : null}
-      {page.name === 'vault' ? <VaultPage slug={page.slug} /> : null}
+      {page.name === 'vault' ? <VaultPage slug={page.slug} onVaultChanged={loadVaults} /> : null}
       {page.name === 'admin-users' ? <AdminUsersPage /> : null}
       {page.name === 'account' ? <AccountPage user={user} /> : null}
     </AppShell>

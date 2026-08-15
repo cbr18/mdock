@@ -1,4 +1,4 @@
-Status: CREATED
+Status: DONE
 
 # Basic Web Dashboard
 
@@ -22,6 +22,12 @@ Plan: [14_08_2026_21_15_basic_web_dashboard.md](../plans/14_08_2026_21_15_basic_
 - Не хранить пароли в frontend state дольше формы отправки.
 - Все mutating API должны отправлять `X-CSRF-Token` из cookie `mdock_csrf`.
 - UI должен быть пригоден для desktop и mobile без наложения текста/контролов.
+- Использовать мягкий Obsidian/Zed-like стиль: спокойные поверхности, современные lucide-иконки, умеренные скругления, плотная рабочая компоновка.
+- Тема должна быть глобальной и строиться на CSS variables.
+- Не хардкодить цвета в компонентах, если есть theme token.
+- Поддержать background themes: `black`, `dark`, `warm`, `light`.
+- Поддержать accent colors: violet, blue, cyan, green, amber, rose.
+- Тема и accent хранятся в `localStorage` в MVP.
 
 ## Не входит в задачу
 
@@ -57,6 +63,11 @@ Plan: [14_08_2026_21_15_basic_web_dashboard.md](../plans/14_08_2026_21_15_basic_
   - reset password;
   - revoke sessions;
   - обработка `last_active_admin`.
+- Theme settings:
+  - выбор background theme;
+  - выбор accent color;
+  - применение темы ко всему UI;
+  - сохранение выбора в `localStorage`.
 - Ошибки API показываются пользователю через UI state, без падения render path.
 
 ## Затронутые области
@@ -64,6 +75,9 @@ Plan: [14_08_2026_21_15_basic_web_dashboard.md](../plans/14_08_2026_21_15_basic_
 - `web/src`
 - `web/package.json`, если тестовая конфигурация потребует уточнения
 - `README.md` и docs, если изменится пользовательский flow
+- `AGENTS.md`
+- `docs/vault-server-tz.md`
+- `docs/tech-stack.md`
 
 ## Заметки по реализации
 
@@ -72,6 +86,8 @@ Plan: [14_08_2026_21_15_basic_web_dashboard.md](../plans/14_08_2026_21_15_basic_
 - Не добавлять state management library без необходимости; для MVP достаточно React state/hooks.
 - Для git commits использовать компактный список, для git status — отдельный блок внутри vault detail.
 - Дерево git/commit history в формулировке этой задачи означает видимость git-состояния и истории vault; файловое дерево markdown появится отдельной задачей вместе с file API/editor.
+- Theme provider/context должен жить на верхнем уровне frontend и выставлять `data-theme`/`data-accent`.
+- Все новые компоненты должны использовать существующие theme tokens из CSS.
 
 ## Критерии приёмки
 
@@ -81,6 +97,7 @@ Plan: [14_08_2026_21_15_basic_web_dashboard.md](../plans/14_08_2026_21_15_basic_
 - Пользователь может создать vault и увидеть WebDAV URL.
 - Owner может увидеть git status/commits/remote, настроить remote и запустить push.
 - Admin operations работают через UI и корректно показывают ошибки.
+- Пользователь может выбрать background theme и accent color, выбор переживает reload.
 - Frontend tests покрывают ключевые states.
 
 ## План тестирования
@@ -97,7 +114,13 @@ Plan: [14_08_2026_21_15_basic_web_dashboard.md](../plans/14_08_2026_21_15_basic_
 
 ## Результаты валидации
 
-- Не выполнялось: задача только подготовлена.
+- `npm test` — пройдено.
+- `npm run build` — пройдено.
+- `go test ./...` — пройдено.
+- `docker compose --env-file test/.env.test.example -f test/docker-compose.yml up -d --build` — test stack пересобран и поднят.
+- `./test/run-smoke.sh` — пройдено.
+- Логи test stack проверены: нет `panic`, `database is locked`, 5xx, auth/cookie/password leaks.
+- Playwright MCP visual check не выполнен: MCP browser занят другим процессом и не дал открыть вкладку.
 
 ## Откат
 

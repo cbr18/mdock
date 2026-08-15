@@ -66,6 +66,18 @@ The project is new. Do not assume any previous architecture, service names, depl
 - Prefer small pure helpers for reusable logic when that matches local style.
 - Add abstractions only when they remove real complexity or match an established local pattern.
 
+## Frontend Theme
+
+- The web UI uses one global theme system based on CSS custom properties.
+- Do not hardcode colors directly inside feature/page components when a theme token exists.
+- Components must use global tokens for background, surface, text, muted text, borders, focus rings, accents, danger/success/warning states, and shadows.
+- Theme settings are global for the whole frontend, not per component.
+- The default visual direction is a soft Obsidian/Zed-like workspace: calm surfaces, modern icons, moderate rounded corners, compact controls, and no marketing/landing-page layout.
+- Supported background themes: `black`, `dark`, `warm`, `light`.
+- Supported accent colors should remain a small curated set, initially: violet, blue, cyan, green, amber, rose.
+- Text colors must be derived from the selected background theme so contrast remains readable on black, dark-gray, beige/warm, and white backgrounds.
+- Persist theme and accent choice in `localStorage` for MVP. Do not add backend user preferences until explicitly requested.
+
 ## Error Handling
 
 - Return or surface errors with useful context.

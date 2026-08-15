@@ -12,7 +12,7 @@ export function VaultCard({ vault, onOpen }) {
   }
 
   return (
-    <article className="vault-card">
+    <article className="vault-card surface-panel">
       <div className="vault-card-header">
         <Database size={20} aria-hidden="true" />
         <button type="button" className="vault-title-button" onClick={() => onOpen(vault.slug)}>

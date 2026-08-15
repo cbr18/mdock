@@ -32,7 +32,7 @@ export function AuthPage({ onAuthenticated }) {
 
   return (
     <main className="app-shell auth-shell">
-      <section className="auth-panel" aria-labelledby="auth-title">
+      <section className="auth-panel surface-panel" aria-labelledby="auth-title">
         <div className="brand-row">
           <ShieldCheck aria-hidden="true" size={22} />
           <h1 id="auth-title">mdock</h1>
@@ -77,7 +77,7 @@ export function AuthPage({ onAuthenticated }) {
           ) : null}
           <button type="submit">{authMode === 'login' ? 'Войти' : 'Создать admin'}</button>
         </form>
-        <StatusMessage>{message}</StatusMessage>
+        <StatusMessage className="inline-status">{message}</StatusMessage>
       </section>
     </main>
   );

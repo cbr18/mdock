@@ -9,29 +9,35 @@ Task: [14_08_2026_21_15_basic_web_dashboard.md](../tasks/14_08_2026_21_15_basic_
    - JSON request helper;
    - CSRF header из cookie;
    - нормализация ошибок.
-3. Реализовать auth shell:
+3. Добавить глобальную theme-систему:
+   - CSS variables;
+   - `black`, `dark`, `warm`, `light`;
+   - accent colors violet, blue, cyan, green, amber, rose;
+   - `localStorage`;
+   - controls в topbar/account.
+4. Реализовать auth shell:
    - setup first admin;
    - login;
    - logout;
    - current user state.
-4. Реализовать vault dashboard:
+5. Реализовать vault dashboard:
    - list/create;
    - detail;
    - rename;
    - archive/unarchive;
    - WebDAV details.
-5. Реализовать git section vault detail:
+6. Реализовать git section vault detail:
    - status;
    - commits;
    - remote get/set;
    - manual push.
-6. Реализовать admin users panel:
+7. Реализовать admin users panel:
    - list/create;
    - enable/disable;
    - password reset;
    - revoke sessions.
-7. Добавить frontend tests на ключевые API states и error states.
-8. Проверить production build и test stack.
+8. Добавить frontend tests на ключевые API states, error states и theme persistence.
+9. Проверить production build и test stack.
 
 ## Проверки
 
@@ -46,6 +52,7 @@ Task: [14_08_2026_21_15_basic_web_dashboard.md](../tasks/14_08_2026_21_15_basic_
 - На сервере пока нет JSON file tree API; поэтому не надо обещать markdown-файловое дерево в рамках этой задачи.
 - Setup-регистрация доступна только в пустой БД; test/e2e должен уметь работать с чистым volume или отдельным temporary stack.
 - CSRF легко забыть на `PUT/PATCH/POST`; helper должен закрыть это централизованно.
+- Риск контрастности на `black`/`warm` темах; цвета текста должны идти из theme tokens, а не из компонентных override.
 
 ## Заметки по откату
 

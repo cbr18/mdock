@@ -163,6 +163,12 @@ PRAGMA journal_mode=WAL;
 - **CSS Modules или plain CSS**
   - Для MVP лучше plain CSS/CSS Modules без UI framework.
   - Tailwind, MUI, Chakra и другие UI frameworks не добавляем без отдельного решения.
+  - Глобальная theme-система обязательна: CSS custom properties, верхнеуровневые `data-theme` и `data-accent`.
+  - Цвета в компонентах должны использовать theme tokens.
+  - Visual direction: мягкий Obsidian/Zed-like workspace, не marketing UI.
+  - Background themes: `black`, `dark`, `warm`, `light`.
+  - Accent colors: violet, blue, cyan, green, amber, rose.
+  - Theme/accent persistence в MVP через `localStorage`.
 
 ### Icons
 

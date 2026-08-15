@@ -6,6 +6,7 @@ import App from './App.jsx';
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  localStorage.clear();
 });
 
 test('renders auth form when session is absent', async () => {
@@ -41,6 +42,30 @@ test('logs in and shows vault webdav url', async () => {
 
   await waitFor(() => expect(screen.getByRole('heading', { name: 'Vaults' })).toBeInTheDocument());
   expect(screen.getByDisplayValue('http://localhost:3000/webdav/alice/')).toBeInTheDocument();
+});
+
+test('persists selected theme and accent', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url) => {
+    if (url === '/api/auth/me') {
+      return response({ username: 'admin', is_admin: true });
+    }
+    if (url === '/api/vaults') {
+      return response({ vaults: [] });
+    }
+    return response({}, 404);
+  }));
+
+  render(<App />);
+
+  await screen.findByRole('heading', { name: 'Vaults' });
+  fireEvent.click(screen.getByLabelText('Настройки темы'));
+  fireEvent.click(screen.getByRole('button', { name: 'Белый' }));
+  fireEvent.click(screen.getByLabelText('Blue'));
+
+  expect(localStorage.getItem('mdock.theme')).toBe('light');
+  expect(localStorage.getItem('mdock.accent')).toBe('blue');
+  expect(document.querySelector('.theme-root')).toHaveAttribute('data-theme', 'light');
+  expect(document.querySelector('.theme-root')).toHaveAttribute('data-accent', 'blue');
 });
 
 function response(payload, status = 200) {

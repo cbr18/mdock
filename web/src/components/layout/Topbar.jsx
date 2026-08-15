@@ -1,4 +1,5 @@
 import { LogOut, ShieldCheck } from 'lucide-react';
+import { ThemeSwitcher } from '../../features/theme/ThemeSwitcher.jsx';
 
 export function Topbar({ user, onNavigate, onLogout }) {
   return (
@@ -13,6 +14,7 @@ export function Topbar({ user, onNavigate, onLogout }) {
         <button type="button" onClick={() => onNavigate('account')}>Account</button>
       </nav>
       <div className="user-actions">
+        <ThemeSwitcher />
         <span>{user?.username}</span>
         <button type="button" className="icon-button" onClick={onLogout} title="Выйти" aria-label="Выйти">
           <LogOut size={18} aria-hidden="true" />

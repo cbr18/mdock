@@ -52,6 +52,12 @@
   - в MVP пользователь видит только vaults, где он member;
   - shared vault creation и управление участниками не входят в Фазу 1, но схема должна быть готова к этому.
 - [ ] Веб-морда:
+  - Мягкий Obsidian/Zed-like рабочий интерфейс: спокойные поверхности, современные иконки, умеренные скругления, без landing-page/marketing layout.
+  - Глобальная тема обязательна для всего frontend.
+  - Цвета компонентов должны идти через CSS custom properties/theme tokens, а не через локальный hardcode.
+  - Background themes: `black`, `dark`, `warm`, `light`.
+  - Accent colors: violet, blue, cyan, green, amber, rose.
+  - Выбор theme/accent в MVP хранится в `localStorage`.
   - Дерево файлов как файловый браузер Obsidian.
   - Просмотр/рендер markdown.
   - Редактирование markdown в source mode.
@@ -134,6 +140,7 @@
   - Go backend запускается отдельно; связь через CORS или Vite proxy.
   - В релизе `npm run build` собирает статику, а Go встраивает её в бинарник через `embed.FS`.
   - Конечный пользователь получает один бинарник.
+  - UI theme system глобальный, на CSS variables, с выбором background theme и accent color.
 - Хранилище:
   - обычная файловая система;
   - отдельный git-репозиторий внутри каждого vault;
