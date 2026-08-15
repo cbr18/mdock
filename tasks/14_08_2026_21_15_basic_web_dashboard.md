@@ -128,4 +128,4 @@ Plan: [14_08_2026_21_15_basic_web_dashboard.md](../plans/14_08_2026_21_15_basic_
 
 ## Commits
 
-- Будет заполнено после реализации.
+- `66ea456` — Implement themed web dashboard.
