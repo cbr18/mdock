@@ -80,6 +80,21 @@ form {
   line-height: 1.2;
 }
 
+.brand-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  background: transparent;
+  color: #20242a;
+  font-weight: 700;
+  font-size: 24px;
+}
+
+.brand-button:hover {
+  background: transparent;
+}
+
 .mode-switch {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -141,6 +156,23 @@ form {
   font-size: 14px;
 }
 
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topnav button {
+  min-height: 34px;
+  padding: 7px 10px;
+  background: transparent;
+  color: #38424f;
+}
+
+.topnav button:hover {
+  background: #e5eaef;
+}
+
 .icon-button {
   display: inline-grid;
   width: 38px;
@@ -154,9 +186,25 @@ form {
   margin-top: 28px;
 }
 
-.vault-toolbar h2 {
+.vault-toolbar h2,
+.page-header h2 {
   margin: 0;
   font-size: 22px;
+}
+
+.page-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  max-width: 1120px;
+  margin: 28px auto 0;
+}
+
+.page-actions {
+  display: flex;
+  align-items: end;
+  gap: 12px;
 }
 
 .create-vault {
@@ -207,6 +255,19 @@ form {
   overflow-wrap: anywhere;
 }
 
+.vault-title-button {
+  display: grid;
+  gap: 3px;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.vault-title-button:hover {
+  background: transparent;
+}
+
 .vault-card p {
   margin: 3px 0 0;
   color: #6a7480;
@@ -228,13 +289,19 @@ form {
   margin: 0;
 }
 
+.placeholder-page {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
 @media (max-width: 720px) {
   .workspace-shell {
     padding: 16px;
   }
 
   .topbar,
-  .vault-toolbar {
+  .vault-toolbar,
+  .page-header {
     align-items: stretch;
     flex-direction: column;
   }
@@ -245,6 +312,14 @@ form {
 
   .user-actions {
     justify-content: space-between;
+  }
+
+  .topnav {
+    justify-content: stretch;
+  }
+
+  .topnav button {
+    flex: 1;
   }
 
   .create-vault {
