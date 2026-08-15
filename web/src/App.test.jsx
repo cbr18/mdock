@@ -68,6 +68,27 @@ test('persists selected theme and accent', async () => {
   expect(document.querySelector('.theme-root')).toHaveAttribute('data-accent', 'blue');
 });
 
+test('resets scroll position on internal navigation', async () => {
+  const scrollTo = vi.fn();
+  vi.stubGlobal('scrollTo', scrollTo);
+  vi.stubGlobal('fetch', vi.fn(async (url) => {
+    if (url === '/api/auth/me') {
+      return response({ username: 'admin', is_admin: true });
+    }
+    if (url === '/api/vaults') {
+      return response({ vaults: [] });
+    }
+    return response({}, 404);
+  }));
+
+  render(<App />);
+
+  await screen.findByRole('heading', { name: 'Vaults' });
+  fireEvent.click(screen.getByRole('button', { name: 'Account' }));
+
+  expect(scrollTo).toHaveBeenCalledWith({ top: 0, left: 0, behavior: 'instant' });
+});
+
 function response(payload, status = 200) {
   return {
     ok: status >= 200 && status < 300,

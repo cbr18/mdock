@@ -676,4 +676,10 @@ legend {
   .row-actions input {
     width: 100%;
   }
+
+  .theme-popover {
+    right: auto;
+    left: 0;
+    width: min(260px, calc(100vw - 32px));
+  }
 }

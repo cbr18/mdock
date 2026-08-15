@@ -65,6 +65,7 @@ function AppContent() {
   }
 
   function navigate(nextPage) {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     if (nextPage === 'dashboard' || nextPage === 'admin-users' || nextPage === 'account') {
       setPage({ name: nextPage });
       return;

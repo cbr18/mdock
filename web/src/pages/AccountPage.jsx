@@ -38,11 +38,11 @@ export function AccountPage({ user }) {
           <form className="stack-form" onSubmit={handleChangePassword}>
             <label>
               Current password
-              <input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
+              <input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
             </label>
             <label>
               New password
-              <input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+              <input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
             </label>
             <button type="submit">Сменить пароль</button>
           </form>
