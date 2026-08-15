@@ -6,8 +6,11 @@ import (
 	"errors"
 	"log/slog"
 	"net/url"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cbr/mdock/internal/config"
 	appgit "github.com/cbr/mdock/internal/git"
@@ -54,6 +57,8 @@ var (
 	ErrRegistrationClosed  = errors.New("registration closed")
 	ErrInvalidSetupToken   = errors.New("invalid setup token")
 	ErrLastActiveAdmin     = errors.New("last active admin")
+	ErrBinaryFile          = errors.New("binary file")
+	ErrInvalidFilePath     = errors.New("invalid file path")
 )
 
 func New(cfg config.Config, st *store.Store, logger *slog.Logger) (*Service, error) {
@@ -415,6 +420,175 @@ func (s *Service) GitCommits(ctx context.Context, userID int64, vaultSlug string
 	return item, commits, nil
 }
 
+func (s *Service) ListFiles(ctx context.Context, userID int64, vaultSlug, relPath string) (store.Vault, []vault.Entry, error) {
+	item, err := s.store.VaultForUserBySlug(ctx, userID, vaultSlug)
+	if err != nil {
+		return store.Vault{}, nil, err
+	}
+	rel, err := cleanFilePath(relPath, true)
+	if err != nil {
+		return store.Vault{}, nil, err
+	}
+	entries, err := s.vaultService.List(item.Path, rel)
+	if err != nil {
+		return store.Vault{}, nil, err
+	}
+	return item, entries, nil
+}
+
+func (s *Service) ReadTextFile(ctx context.Context, userID int64, vaultSlug, relPath string) (store.Vault, vault.Info, string, error) {
+	item, err := s.store.VaultForUserBySlug(ctx, userID, vaultSlug)
+	if err != nil {
+		return store.Vault{}, vault.Info{}, "", err
+	}
+	rel, err := cleanFilePath(relPath, false)
+	if err != nil {
+		return store.Vault{}, vault.Info{}, "", err
+	}
+	info, err := s.vaultService.Stat(item.Path, rel)
+	if err != nil {
+		return store.Vault{}, vault.Info{}, "", err
+	}
+	if info.IsDir {
+		return store.Vault{}, vault.Info{}, "", ErrInvalidFilePath
+	}
+	data, err := s.vaultService.ReadFile(item.Path, rel)
+	if err != nil {
+		return store.Vault{}, vault.Info{}, "", err
+	}
+	if !utf8.Valid(data) {
+		return store.Vault{}, vault.Info{}, "", ErrBinaryFile
+	}
+	return item, info, string(data), nil
+}
+
+func (s *Service) WriteTextFile(ctx context.Context, userID int64, vaultSlug, relPath, content, owner string) (store.Vault, vault.Info, error) {
+	item, rel, err := s.fileMutationContext(ctx, userID, vaultSlug, relPath, false)
+	if err != nil {
+		return store.Vault{}, vault.Info{}, err
+	}
+	if err := s.withFileMutationLock(ctx, item, rel, owner, func() error {
+		return s.vaultService.WriteFile(item.Path, rel, []byte(content))
+	}); err != nil {
+		return store.Vault{}, vault.Info{}, err
+	}
+	if err := s.enqueueVaultChange(ctx, item, []string{rel}); err != nil {
+		return store.Vault{}, vault.Info{}, err
+	}
+	info, err := s.vaultService.Stat(item.Path, rel)
+	if err != nil {
+		return store.Vault{}, vault.Info{}, err
+	}
+	return item, info, nil
+}
+
+func (s *Service) CreateTextFile(ctx context.Context, userID int64, vaultSlug, relPath, content, owner string) (store.Vault, vault.Info, error) {
+	item, rel, err := s.fileMutationContext(ctx, userID, vaultSlug, relPath, false)
+	if err != nil {
+		return store.Vault{}, vault.Info{}, err
+	}
+	if _, err := s.vaultService.Stat(item.Path, rel); err == nil {
+		return store.Vault{}, vault.Info{}, ErrInvalidFilePath
+	}
+	if err := s.withFileMutationLock(ctx, item, rel, owner, func() error {
+		return s.vaultService.WriteFile(item.Path, rel, []byte(content))
+	}); err != nil {
+		return store.Vault{}, vault.Info{}, err
+	}
+	if err := s.enqueueVaultChange(ctx, item, []string{rel}); err != nil {
+		return store.Vault{}, vault.Info{}, err
+	}
+	info, err := s.vaultService.Stat(item.Path, rel)
+	if err != nil {
+		return store.Vault{}, vault.Info{}, err
+	}
+	return item, info, nil
+}
+
+func (s *Service) CreateDir(ctx context.Context, userID int64, vaultSlug, relPath, owner string) (store.Vault, vault.Info, error) {
+	item, rel, err := s.fileMutationContext(ctx, userID, vaultSlug, relPath, false)
+	if err != nil {
+		return store.Vault{}, vault.Info{}, err
+	}
+	if err := s.withFileMutationLock(ctx, item, rel, owner, func() error {
+		return s.vaultService.Mkdir(item.Path, rel)
+	}); err != nil {
+		return store.Vault{}, vault.Info{}, err
+	}
+	if err := s.enqueueVaultChange(ctx, item, []string{rel}); err != nil {
+		return store.Vault{}, vault.Info{}, err
+	}
+	info, err := s.vaultService.Stat(item.Path, rel)
+	if err != nil {
+		return store.Vault{}, vault.Info{}, err
+	}
+	return item, info, nil
+}
+
+func (s *Service) MovePath(ctx context.Context, userID int64, vaultSlug, fromPath, toPath, owner string) (store.Vault, error) {
+	item, from, err := s.fileMutationContext(ctx, userID, vaultSlug, fromPath, false)
+	if err != nil {
+		return store.Vault{}, err
+	}
+	to, err := cleanFilePath(toPath, false)
+	if err != nil {
+		return store.Vault{}, err
+	}
+	if _, err := s.vaultService.Stat(item.Path, to); err == nil {
+		return store.Vault{}, ErrInvalidFilePath
+	}
+	if err := s.withFileMutationLock(ctx, item, from, owner, func() error {
+		return s.vaultService.Rename(item.Path, from, to)
+	}); err != nil {
+		return store.Vault{}, err
+	}
+	if err := s.enqueueVaultChange(ctx, item, []string{from, to}); err != nil {
+		return store.Vault{}, err
+	}
+	return item, nil
+}
+
+func (s *Service) DeletePath(ctx context.Context, userID int64, vaultSlug, relPath, owner string) (store.Vault, error) {
+	item, rel, err := s.fileMutationContext(ctx, userID, vaultSlug, relPath, false)
+	if err != nil {
+		return store.Vault{}, err
+	}
+	if err := s.withFileMutationLock(ctx, item, rel, owner, func() error {
+		return s.vaultService.Delete(item.Path, rel)
+	}); err != nil {
+		return store.Vault{}, err
+	}
+	if err := s.enqueueVaultChange(ctx, item, nil); err != nil {
+		return store.Vault{}, err
+	}
+	return item, nil
+}
+
+func (s *Service) AcquireFileLock(ctx context.Context, userID int64, vaultSlug, relPath, owner string) (store.Vault, locks.Lock, error) {
+	item, rel, err := s.fileMutationContext(ctx, userID, vaultSlug, relPath, false)
+	if err != nil {
+		return store.Vault{}, locks.Lock{}, err
+	}
+	lock, err := s.lockService.Acquire(ctx, item.ID, rel, owner, "web", s.cfg.LockTTL)
+	return item, lock, err
+}
+
+func (s *Service) HeartbeatFileLock(ctx context.Context, userID int64, vaultSlug, relPath, owner string) (store.Vault, error) {
+	item, rel, err := s.fileMutationContext(ctx, userID, vaultSlug, relPath, false)
+	if err != nil {
+		return store.Vault{}, err
+	}
+	return item, s.lockService.Heartbeat(ctx, item.ID, rel, owner, s.cfg.LockTTL)
+}
+
+func (s *Service) ReleaseFileLock(ctx context.Context, userID int64, vaultSlug, relPath, owner string) (store.Vault, error) {
+	item, rel, err := s.fileMutationContext(ctx, userID, vaultSlug, relPath, false)
+	if err != nil {
+		return store.Vault{}, err
+	}
+	return item, s.lockService.Release(ctx, item.ID, rel, owner)
+}
+
 func (s *Service) requireVaultOwner(ctx context.Context, userID int64, vaultSlug string) (store.Vault, error) {
 	item, err := s.store.VaultForUserBySlugIncludingArchived(ctx, userID, vaultSlug)
 	if err != nil {
@@ -424,6 +598,60 @@ func (s *Service) requireVaultOwner(ctx context.Context, userID int64, vaultSlug
 		return store.Vault{}, ErrForbidden
 	}
 	return item, nil
+}
+
+func (s *Service) fileMutationContext(ctx context.Context, userID int64, vaultSlug, relPath string, allowRoot bool) (store.Vault, string, error) {
+	item, err := s.store.VaultForUserBySlug(ctx, userID, vaultSlug)
+	if err != nil {
+		return store.Vault{}, "", err
+	}
+	rel, err := cleanFilePath(relPath, allowRoot)
+	if err != nil {
+		return store.Vault{}, "", err
+	}
+	return item, rel, nil
+}
+
+func cleanFilePath(relPath string, allowRoot bool) (string, error) {
+	rel, err := vault.SafeRelPath(relPath)
+	if err != nil {
+		return "", ErrInvalidFilePath
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == "." && !allowRoot {
+		return "", ErrInvalidFilePath
+	}
+	return rel, nil
+}
+
+func (s *Service) withFileMutationLock(ctx context.Context, item store.Vault, rel, owner string, fn func() error) error {
+	release := true
+	if owner == "" {
+		owner = "web:transient:" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	} else if existing, ok, err := s.lockService.Get(ctx, item.ID, rel); err != nil {
+		return err
+	} else if ok && existing.Owner == owner {
+		release = false
+	}
+	if _, err := s.lockService.Acquire(ctx, item.ID, rel, owner, "web", s.cfg.LockTTL); err != nil {
+		return err
+	}
+	if release {
+		defer func() {
+			if err := s.lockService.Release(context.Background(), item.ID, rel, owner); err != nil {
+				s.logger.Error("release web mutation lock", "error", err, "vault_id", item.ID)
+			}
+		}()
+	}
+	return fn()
+}
+
+func (s *Service) enqueueVaultChange(ctx context.Context, item store.Vault, paths []string) error {
+	queue, err := s.QueueForVault(item)
+	if err != nil {
+		return err
+	}
+	return queue.Enqueue(ctx, appgit.Task{Source: "web", Message: "web update", Paths: paths})
 }
 
 func validateRemoteURL(remoteURL string) error {

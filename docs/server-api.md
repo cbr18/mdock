@@ -139,6 +139,147 @@ Request:
 
 Список участников vault. В MVP только чтение, управление участниками не входит.
 
+## Files
+
+Все file endpoints требуют web session. Mutating methods требуют `X-CSRF-Token`.
+
+Path rules:
+
+- `path` всегда относительный путь внутри vault;
+- абсолютные пути, `..` traversal и доступ к `.git` отклоняются;
+- root path для list можно передать как пустой `path` или `.`;
+- root path нельзя записывать, перемещать, удалять или lock'ать.
+
+### `GET /api/vaults/{slug}/files?path=dir`
+
+Возвращает entries директории.
+
+Response:
+
+```json
+{
+  "vault": {},
+  "path": "dir",
+  "entries": [
+    {
+      "name": "note.md",
+      "path": "dir/note.md",
+      "is_dir": false,
+      "size": 12,
+      "mod_time": "2026-08-15T00:00:00Z"
+    }
+  ]
+}
+```
+
+### `GET /api/vaults/{slug}/files/content?path=note.md`
+
+Читает UTF-8 text file.
+
+Response:
+
+```json
+{
+  "vault": {},
+  "file": {},
+  "content": "# Note"
+}
+```
+
+Если файл не UTF-8 text, возвращает `415 binary_file`.
+
+### `POST /api/vaults/{slug}/files`
+
+Создаёт новый text file. Если файл уже существует, возвращает `400 invalid_path`.
+
+Request:
+
+```json
+{
+  "path": "note.md",
+  "content": "# Note"
+}
+```
+
+### `PUT /api/vaults/{slug}/files/content`
+
+Перезаписывает text file.
+
+Request:
+
+```json
+{
+  "path": "note.md",
+  "content": "# Updated"
+}
+```
+
+### `POST /api/vaults/{slug}/dirs`
+
+Создаёт директорию.
+
+Request:
+
+```json
+{
+  "path": "folder"
+}
+```
+
+### `PATCH /api/vaults/{slug}/files/move`
+
+Переименовывает или перемещает файл/директорию. Overwrite существующего destination в MVP запрещён и возвращает `400 invalid_path`.
+
+Request:
+
+```json
+{
+  "from_path": "old.md",
+  "to_path": "folder/new.md"
+}
+```
+
+### `DELETE /api/vaults/{slug}/files?path=note.md`
+
+Удаляет файл или директорию.
+
+### `POST /api/vaults/{slug}/locks`
+
+Берёт explicit web-editor lock на файл для текущей web session.
+
+Request:
+
+```json
+{
+  "path": "note.md"
+}
+```
+
+Response содержит `lock.expires_at`. Lock owner является server-generated fingerprint и не содержит raw session id.
+
+### `POST /api/vaults/{slug}/locks/heartbeat`
+
+Продлевает lock текущей web session.
+
+Request:
+
+```json
+{
+  "path": "note.md"
+}
+```
+
+### `DELETE /api/vaults/{slug}/locks?path=note.md`
+
+Отпускает lock текущей web session.
+
+Lock behavior:
+
+- запись/move/delete в файл, залоченный другой web session или WebDAV lock owner, возвращает `423 locked`;
+- запись той же web session, которая держит lock, разрешена;
+- операции без explicit lock берут transient lock только на время операции;
+- после успешных file mutations git queue получает source `web`.
+
 ## Git
 
 ### `GET /api/vaults/{slug}/git/status`

@@ -305,6 +305,98 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected members response: %s", members.Body.String())
 	}
 
+	dirBody, _ := json.Marshal(map[string]string{"path": "web"})
+	createDir := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/dirs", bytes.NewReader(dirBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(createDir, req)
+	if createDir.Code != http.StatusCreated {
+		t.Fatalf("create directory status = %d body=%s", createDir.Code, createDir.Body.String())
+	}
+	fileBody, _ := json.Marshal(map[string]string{"path": "web/editor.md", "content": "hello from web"})
+	createFile := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/files", bytes.NewReader(fileBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(createFile, req)
+	if createFile.Code != http.StatusCreated {
+		t.Fatalf("create file status = %d body=%s", createFile.Code, createFile.Body.String())
+	}
+	readFile := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/files/content?path=web/editor.md", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(readFile, req)
+	if readFile.Code != http.StatusOK || !strings.Contains(readFile.Body.String(), `"content":"hello from web"`) {
+		t.Fatalf("read file status = %d body=%s", readFile.Code, readFile.Body.String())
+	}
+	listFiles := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/files?path=web", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(listFiles, req)
+	if listFiles.Code != http.StatusOK || !strings.Contains(listFiles.Body.String(), `"path":"web/editor.md"`) {
+		t.Fatalf("list files status = %d body=%s", listFiles.Code, listFiles.Body.String())
+	}
+	badPath := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/files/content?path=.git/config", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(badPath, req)
+	if badPath.Code != http.StatusBadRequest {
+		t.Fatalf(".git file api status = %d body=%s", badPath.Code, badPath.Body.String())
+	}
+	traversal := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/files/content?path=../escape.md", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(traversal, req)
+	if traversal.Code != http.StatusBadRequest {
+		t.Fatalf("traversal file api status = %d body=%s", traversal.Code, traversal.Body.String())
+	}
+	lockBody, _ := json.Marshal(map[string]string{"path": "web/editor.md"})
+	lockFile := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/locks", bytes.NewReader(lockBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(lockFile, req)
+	if lockFile.Code != http.StatusOK {
+		t.Fatalf("lock file status = %d body=%s", lockFile.Code, lockFile.Body.String())
+	}
+	secondAliceCookies := loginCookies(t, srv, "alice", "secret")
+	lockedWrite := httptest.NewRecorder()
+	body, _ = json.Marshal(map[string]string{"path": "web/editor.md", "content": "blocked"})
+	req = httptest.NewRequest(http.MethodPut, "/api/vaults/work-notes/files/content", bytes.NewReader(body))
+	addSessionAuth(req, secondAliceCookies)
+	srv.Handler().ServeHTTP(lockedWrite, req)
+	if lockedWrite.Code != http.StatusLocked {
+		t.Fatalf("locked write status = %d body=%s", lockedWrite.Code, lockedWrite.Body.String())
+	}
+	allowedWrite := httptest.NewRecorder()
+	body, _ = json.Marshal(map[string]string{"path": "web/editor.md", "content": "updated by owner"})
+	req = httptest.NewRequest(http.MethodPut, "/api/vaults/work-notes/files/content", bytes.NewReader(body))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(allowedWrite, req)
+	if allowedWrite.Code != http.StatusOK {
+		t.Fatalf("allowed write status = %d body=%s", allowedWrite.Code, allowedWrite.Body.String())
+	}
+	releaseLock := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/api/vaults/work-notes/locks?path=web/editor.md", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(releaseLock, req)
+	if releaseLock.Code != http.StatusOK {
+		t.Fatalf("release lock status = %d body=%s", releaseLock.Code, releaseLock.Body.String())
+	}
+	moveBody, _ := json.Marshal(map[string]string{"from_path": "web/editor.md", "to_path": "web/moved.md"})
+	moveFile := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPatch, "/api/vaults/work-notes/files/move", bytes.NewReader(moveBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(moveFile, req)
+	if moveFile.Code != http.StatusOK {
+		t.Fatalf("move file status = %d body=%s", moveFile.Code, moveFile.Body.String())
+	}
+	deleteFile := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/api/vaults/work-notes/files?path=web/moved.md", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(deleteFile, req)
+	if deleteFile.Code != http.StatusOK {
+		t.Fatalf("delete file status = %d body=%s", deleteFile.Code, deleteFile.Body.String())
+	}
+
 	put := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPut, "/webdav/work-notes/notes/today.md", strings.NewReader("hello obsidian"))
 	req.SetBasicAuth("alice", "secret")
@@ -359,8 +451,11 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	if commits.Code != http.StatusOK {
 		t.Fatalf("git commits code = %d body=%s", commits.Code, commits.Body.String())
 	}
-	if !strings.Contains(commits.Body.String(), "sync(webdav): update 1 file") {
+	if !strings.Contains(commits.Body.String(), "sync(webdav): update") && !strings.Contains(commits.Body.String(), "sync(mixed): update") {
 		t.Fatalf("git commits response missing commit subject: %s", commits.Body.String())
+	}
+	if !strings.Contains(commits.Body.String(), "sync(web): update") && !strings.Contains(commits.Body.String(), "sync(mixed): update") {
+		t.Fatalf("git commits response missing web commit subject: %s", commits.Body.String())
 	}
 
 	badRemoteBody, _ := json.Marshal(map[string]string{"url": "https://user:token@example.test/repo.git"})
@@ -461,6 +556,13 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	srv.Handler().ServeHTTP(hiddenDetail, req)
 	if hiddenDetail.Code != http.StatusNotFound {
 		t.Fatalf("other user vault detail code = %d body=%s", hiddenDetail.Code, hiddenDetail.Body.String())
+	}
+	hiddenFiles := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/files", nil)
+	addSessionAuth(req, otherCookies)
+	srv.Handler().ServeHTTP(hiddenFiles, req)
+	if hiddenFiles.Code != http.StatusNotFound {
+		t.Fatalf("other user file list code = %d body=%s", hiddenFiles.Code, hiddenFiles.Body.String())
 	}
 }
 

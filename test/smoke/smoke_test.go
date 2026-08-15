@@ -123,6 +123,33 @@ func TestRunningTestStack(t *testing.T) {
 		t.Fatalf("unexpected members response: %s", string(members))
 	}
 
+	payload, _ = json.Marshal(map[string]string{"path": "web"})
+	requireStatus(t, client, http.MethodPost, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/dirs", bytes.NewReader(payload), http.StatusCreated)
+	payload, _ = json.Marshal(map[string]string{"path": "web/editor.md", "content": "hello from web"})
+	requireStatus(t, client, http.MethodPost, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/files", bytes.NewReader(payload), http.StatusCreated)
+	readFile := requireOK(t, client, http.MethodGet, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/files/content?path=web/editor.md", nil)
+	if !strings.Contains(string(readFile), `"content":"hello from web"`) {
+		t.Fatalf("read file response missing content: %s", string(readFile))
+	}
+	listFiles := requireOK(t, client, http.MethodGet, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/files?path=web", nil)
+	if !strings.Contains(string(listFiles), `"path":"web/editor.md"`) {
+		t.Fatalf("list files response missing created file: %s", string(listFiles))
+	}
+	requireStatus(t, client, http.MethodGet, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/files/content?path=.git/config", nil, http.StatusBadRequest)
+	lockPayload, _ := json.Marshal(map[string]string{"path": "web/editor.md"})
+	requireOK(t, client, http.MethodPost, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/locks", bytes.NewReader(lockPayload))
+	secondClient := newSessionClient(t)
+	payload, _ = json.Marshal(map[string]string{"username": smokeUsername, "password": smokePassword})
+	requireOK(t, secondClient, http.MethodPost, baseURL+"/api/auth/login", bytes.NewReader(payload))
+	payload, _ = json.Marshal(map[string]string{"path": "web/editor.md", "content": "blocked"})
+	requireStatus(t, secondClient, http.MethodPut, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/files/content", bytes.NewReader(payload), http.StatusLocked)
+	payload, _ = json.Marshal(map[string]string{"path": "web/editor.md", "content": "updated from web"})
+	requireOK(t, client, http.MethodPut, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/files/content", bytes.NewReader(payload))
+	requireOK(t, client, http.MethodDelete, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/locks?path=web/editor.md", nil)
+	payload, _ = json.Marshal(map[string]string{"from_path": "web/editor.md", "to_path": "web/moved.md"})
+	requireOK(t, client, http.MethodPatch, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/files/move", bytes.NewReader(payload))
+	requireOK(t, client, http.MethodDelete, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/files?path=web/moved.md", nil)
+
 	webdavBase := baseURL + "/webdav/" + createResponse.Vault.Slug
 	requireWebDAV(t, client, http.MethodOptions, webdavBase+"/", smokeUsername, smokePassword, nil, http.StatusNoContent, "")
 	requireWebDAV(t, client, "PROPFIND", webdavBase+"/", smokeUsername, smokePassword, nil, http.StatusMultiStatus, "multistatus")
@@ -155,8 +182,11 @@ func TestRunningTestStack(t *testing.T) {
 		t.Fatalf("unexpected git status after debounce: %+v", gitStatus)
 	}
 	gitCommitsBody := requireOK(t, client, http.MethodGet, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/git/commits?limit=5", nil)
-	if !strings.Contains(string(gitCommitsBody), "sync(webdav): update") {
+	if !strings.Contains(string(gitCommitsBody), "sync(webdav): update") && !strings.Contains(string(gitCommitsBody), "sync(mixed): update") {
 		t.Fatalf("git commits response missing sync commit: %s", string(gitCommitsBody))
+	}
+	if !strings.Contains(string(gitCommitsBody), "sync(web): update") && !strings.Contains(string(gitCommitsBody), "sync(mixed): update") {
+		t.Fatalf("git commits response missing web sync commit: %s", string(gitCommitsBody))
 	}
 
 	archived := requireOK(t, client, http.MethodPost, baseURL+"/api/vaults/"+createResponse.Vault.Slug+"/archive", bytes.NewReader(nil))
@@ -393,7 +423,7 @@ func requireStatus(t *testing.T, client *http.Client, method, url string, body *
 	if err != nil {
 		t.Fatalf("NewRequest(%s) error = %v", url, err)
 	}
-	if method == http.MethodPost || method == http.MethodPatch || method == http.MethodPut {
+	if method == http.MethodPost || method == http.MethodPatch || method == http.MethodPut || method == http.MethodDelete {
 		req.Header.Set("Content-Type", "application/json")
 		addCSRFHeader(client, req)
 	}
@@ -421,7 +451,7 @@ func requireOK(t *testing.T, client *http.Client, method, url string, body *byte
 	if err != nil {
 		t.Fatalf("NewRequest(%s) error = %v", url, err)
 	}
-	if method == http.MethodPost || method == http.MethodPatch || method == http.MethodPut {
+	if method == http.MethodPost || method == http.MethodPatch || method == http.MethodPut || method == http.MethodDelete {
 		req.Header.Set("Content-Type", "application/json")
 		addCSRFHeader(client, req)
 	}

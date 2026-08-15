@@ -66,6 +66,28 @@ func (s *Service) Acquire(ctx context.Context, vaultID int64, path, owner, sourc
 	return Lock{VaultID: vaultID, Path: path, Owner: owner, Source: source, ExpiresAt: expiresAt}, nil
 }
 
+func (s *Service) Get(ctx context.Context, vaultID int64, path string) (Lock, bool, error) {
+	now := s.now().UTC()
+	if _, err := s.CleanupExpired(ctx, now); err != nil {
+		return Lock{}, false, err
+	}
+	var item Lock
+	var expiresRaw string
+	err := s.db.QueryRowContext(ctx, `SELECT vault_id, path, owner, source, expires_at FROM file_locks WHERE vault_id = ? AND path = ?`, vaultID, path).Scan(&item.VaultID, &item.Path, &item.Owner, &item.Source, &expiresRaw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Lock{}, false, nil
+	}
+	if err != nil {
+		return Lock{}, false, fmt.Errorf("select lock: %w", err)
+	}
+	expiresAt, err := time.Parse(time.RFC3339Nano, expiresRaw)
+	if err != nil {
+		return Lock{}, false, fmt.Errorf("parse lock expiry: %w", err)
+	}
+	item.ExpiresAt = expiresAt
+	return item, true, nil
+}
+
 func (s *Service) Heartbeat(ctx context.Context, vaultID int64, path, owner string, ttl time.Duration) error {
 	now := s.now().UTC()
 	expiresAt := now.Add(ttl)
