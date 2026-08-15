@@ -95,7 +95,7 @@ Web UI уже показывает vaults, git status, commits и admin-функ
 
 ## Связанные коммиты
 
-- Pending.
+- `d4cd510` — Add web file API.
 
 ## Откат
 
