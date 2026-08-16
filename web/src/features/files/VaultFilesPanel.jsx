@@ -268,6 +268,11 @@ function DocumentView({ content, dirty, editing, lockStatus, mode, selectedFile,
       <MarkdownEditor value={content} dirty={dirty} lockStatus={lockStatus} readOnly={!editing} saveDisabled={lockStatus !== 'locked'} onChange={onChange} onSave={onSave} />
     </Suspense>
   );
+  const liveEditor = (
+    <Suspense fallback={<p className="muted empty-preview">{t('loading')}</p>}>
+      <MarkdownEditor value={content} dirty={dirty} lockStatus={lockStatus} variant="live" saveDisabled={lockStatus !== 'locked'} onChange={onChange} onSave={onSave} />
+    </Suspense>
+  );
   if (mode === 'plain') {
     return editor;
   }
@@ -285,12 +290,8 @@ function DocumentView({ content, dirty, editing, lockStatus, mode, selectedFile,
   }
   if (editing) {
     return (
-      <div className="rendered-preview-view rendered-edit-placeholder-view">
-        <div className="live-preview-placeholder live-preview-placeholder-large" role="status">
-          <strong>{t('livePreviewEditingTitle')}</strong>
-          <p>{t('livePreviewEditingBody')}</p>
-          <p>{t('livePreviewSaveHint')}</p>
-        </div>
+      <div className="live-document-view">
+        {liveEditor}
       </div>
     );
   }

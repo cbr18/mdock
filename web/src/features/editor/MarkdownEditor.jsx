@@ -25,7 +25,9 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLanguage } from '../i18n/LanguageProvider.jsx';
 import { useTheme } from '../theme/ThemeProvider.jsx';
-export function MarkdownEditor({ value, dirty, lockStatus, readOnly = false, saveDisabled, onChange, onSave }) {
+import { livePreviewExtension } from './livePreviewExtension.js';
+
+export function MarkdownEditor({ value, dirty, lockStatus, readOnly = false, saveDisabled, variant = 'source', onChange, onSave }) {
   const viewRef = useRef(null);
   const [openMenu, setOpenMenu] = useState('');
   const { t } = useLanguage();
@@ -35,8 +37,11 @@ export function MarkdownEditor({ value, dirty, lockStatus, readOnly = false, sav
     if (readOnly) {
       items.push(EditorState.readOnly.of(true), EditorView.editable.of(false));
     }
+    if (variant === 'live') {
+      items.push(livePreviewExtension(), EditorView.editorAttributes.of({ class: 'cm-live-preview' }));
+    }
     return items;
-  }, [readOnly]);
+  }, [readOnly, variant]);
   const codeMirrorTheme = theme === 'light' || theme === 'warm' ? 'light' : 'dark';
 
   return (

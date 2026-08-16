@@ -254,7 +254,10 @@ test('renders vault file list and markdown preview', async () => {
   expect(window.location.search).toContain('view=split');
 
   fireEvent.click(screen.getByRole('tab', { name: 'Просмотр' }));
-  expect(await screen.findByText('Live Preview editing ещё не реализован')).toBeInTheDocument();
+  expect((await screen.findAllByLabelText('Markdown-редактор')).length).toBeGreaterThanOrEqual(1);
+  await waitFor(() => expect(document.querySelector('.cm-live-preview')).toBeInTheDocument());
+  await waitFor(() => expect(document.querySelector('.cm-live-heading-1')).toBeInTheDocument());
+  expect(screen.queryByText('Live Preview editing ещё не реализован')).not.toBeInTheDocument();
   expect(screen.getAllByRole('button', { name: 'Сохранить' }).length).toBeGreaterThanOrEqual(1);
   expect(screen.queryByText('tags: [test]')).not.toBeInTheDocument();
 

@@ -1002,34 +1002,115 @@ legend {
   margin: 0;
 }
 
-.live-preview-placeholder {
-  padding: 14px 16px;
+.live-document-view {
+  min-height: 0;
+  padding: 12px;
+  overflow: auto;
+}
+
+.live-document-view .markdown-editor-shell {
+  min-height: 620px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-subtle);
-  color: var(--text-soft);
 }
 
-.live-preview-placeholder strong {
-  display: block;
-  margin-bottom: 4px;
+.live-document-view .editor-toolbar {
+  display: none;
+}
+
+.cm-live-preview .cm-content {
+  max-width: 980px;
+  min-height: 620px;
+  margin: 0 auto;
+  padding: 34px 46px;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1.62;
+}
+
+.cm-live-preview .cm-line {
+  padding: 2px 0;
+}
+
+.cm-live-preview .cm-gutters {
+  display: none;
+}
+
+.cm-live-marker {
+  color: var(--text-muted);
+  opacity: 0.38;
+}
+
+.cm-live-heading-line {
   color: var(--text);
+  font-weight: 700;
+  line-height: 1.25;
 }
 
-.live-preview-placeholder p {
-  margin: 0;
+.cm-live-heading-1 { font-size: 28px; }
+.cm-live-heading-2 { font-size: 23px; }
+.cm-live-heading-3 { font-size: 19px; }
+.cm-live-heading-4,
+.cm-live-heading-5,
+.cm-live-heading-6 { font-size: 16px; }
+
+.cm-live-strong {
+  font-weight: 700;
 }
 
-.rendered-edit-placeholder-view {
-  align-content: start;
+.cm-live-emphasis {
+  font-style: italic;
 }
 
-.live-preview-placeholder-large {
-  min-height: 180px;
+.cm-live-strike {
+  text-decoration: line-through;
 }
 
-.live-preview-placeholder-large p + p {
-  margin-top: 8px;
+.cm-live-highlight {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--warning) 28%, transparent);
+}
+
+.cm-live-inline-code {
+  padding: 1px 4px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.cm-live-link,
+.cm-live-wikilink {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  text-underline-offset: 3px;
+}
+
+.cm-live-list-line {
+  padding-left: 18px;
+}
+
+.cm-live-task-line {
+  padding-left: 24px;
+}
+
+.cm-live-quote-line {
+  border-left: 3px solid var(--accent);
+  padding-left: 14px;
+  color: var(--text-muted);
+}
+
+.cm-live-codeblock-line {
+  padding-left: 14px;
+  padding-right: 14px;
+  background: var(--surface-2);
+  color: var(--text-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.cm-live-code-fence-line {
+  border-top: 1px solid var(--border);
 }
 
 .file-info {
