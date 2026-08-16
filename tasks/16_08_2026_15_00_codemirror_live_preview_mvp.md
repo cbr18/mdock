@@ -83,7 +83,7 @@ Plan: [16_08_2026_15_00_codemirror_live_preview_mvp.md](../plans/16_08_2026_15_0
 - `cd test && docker compose up -d --build` — passed, test stack rebuilt.
 - `./test/run-smoke.sh` — passed.
 - Playwright MCP manual check on `http://127.0.0.1:18081/?page=vault&slug=admin` — passed: `Просмотр + Редактирование` opens editable CodeMirror live preview instead of placeholder.
-- Commit: `3960896`.
+- Commit: `bec3953`.
 
 ## Откат
 
