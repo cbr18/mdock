@@ -1032,6 +1032,13 @@ legend {
   padding: 2px 0;
 }
 
+.cm-live-preview .cm-line.cm-live-active-source-line {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+}
+
 .cm-live-preview .cm-gutters {
   display: none;
 }
@@ -1091,8 +1098,29 @@ legend {
   padding-left: 18px;
 }
 
+.cm-live-bullet {
+  display: inline-block;
+  width: 18px;
+  margin-left: -18px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 .cm-live-task-line {
   padding-left: 24px;
+}
+
+.cm-live-task-checkbox {
+  width: 14px;
+  height: 14px;
+  margin: 0 10px 0 -24px;
+  vertical-align: -2px;
+  accent-color: var(--accent);
+}
+
+.cm-live-list-number {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .cm-live-quote-line {
@@ -1111,6 +1139,62 @@ legend {
 
 .cm-live-code-fence-line {
   border-top: 1px solid var(--border);
+}
+
+.cm-live-code-language {
+  display: inline-block;
+  margin-left: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.cm-live-frontmatter-line {
+  padding-left: 14px;
+  border-left: 3px solid var(--border-strong);
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.cm-live-frontmatter-line + .cm-live-frontmatter-line {
+  border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+.cm-live-horizontal-rule-line {
+  padding: 10px 0;
+}
+
+.cm-live-horizontal-rule {
+  display: block;
+  width: 100%;
+  height: 1px;
+  background: var(--border-strong);
+}
+
+.cm-live-table-line {
+  padding: 5px 10px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  background: var(--bg-subtle);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+}
+
+.cm-live-table-line:first-child {
+  border-top: 1px solid var(--border);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.cm-live-image-label,
+.cm-live-embed-label {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-soft);
 }
 
 .file-info {
