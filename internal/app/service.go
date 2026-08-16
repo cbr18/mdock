@@ -262,6 +262,10 @@ func (s *Service) ListVaults(ctx context.Context, userID int64) ([]store.Vault, 
 	return s.store.ListVaultsForUser(ctx, userID)
 }
 
+func (s *Service) ListVaultsArchived(ctx context.Context, userID int64, archived string) ([]store.Vault, error) {
+	return s.store.ListVaultsForUserArchived(ctx, userID, archived)
+}
+
 func (s *Service) CreateVault(ctx context.Context, userID int64, name string) (store.Vault, error) {
 	item, err := s.store.CreateVaultForUser(ctx, userID, name, store.VaultKindShared)
 	if err != nil {

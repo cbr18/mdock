@@ -509,6 +509,20 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	if strings.Contains(archivedList.Body.String(), `"slug":"work-notes"`) {
 		t.Fatalf("archived vault is visible in list: %s", archivedList.Body.String())
 	}
+	archiveOnlyList := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults?archived=only", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(archiveOnlyList, req)
+	if archiveOnlyList.Code != http.StatusOK || !strings.Contains(archiveOnlyList.Body.String(), `"slug":"work-notes"`) {
+		t.Fatalf("archive-only list status = %d body=%s", archiveOnlyList.Code, archiveOnlyList.Body.String())
+	}
+	badArchiveFilter := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults?archived=bad", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(badArchiveFilter, req)
+	if badArchiveFilter.Code != http.StatusBadRequest {
+		t.Fatalf("bad archived filter status = %d body=%s", badArchiveFilter.Code, badArchiveFilter.Body.String())
+	}
 	archivedWebDAV := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/webdav/work-notes/notes/keep.md", nil)
 	req.SetBasicAuth("alice", "secret")

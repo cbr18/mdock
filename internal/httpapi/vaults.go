@@ -28,8 +28,13 @@ type webDAVDetails struct {
 
 func (h *Handler) vaults(w http.ResponseWriter, r *http.Request) {
 	user := userFromContext(r.Context())
-	vaults, err := h.app.ListVaults(r.Context(), user.ID)
+	archived := strings.TrimSpace(r.URL.Query().Get("archived"))
+	vaults, err := h.app.ListVaultsArchived(r.Context(), user.ID, archived)
 	if err != nil {
+		if strings.Contains(err.Error(), "invalid archived filter") {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_archived_filter"})
+			return
+		}
 		h.logger.Error("list user vaults", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
 		return

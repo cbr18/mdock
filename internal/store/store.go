@@ -251,11 +251,26 @@ func (s *Store) vaultForUserBySlug(ctx context.Context, userID int64, slug strin
 }
 
 func (s *Store) ListVaultsForUser(ctx context.Context, userID int64) ([]Vault, error) {
+	return s.ListVaultsForUserArchived(ctx, userID, "active")
+}
+
+func (s *Store) ListVaultsForUserArchived(ctx context.Context, userID int64, archived string) ([]Vault, error) {
+	whereArchived := "vaults.archived = 0"
+	switch archived {
+	case "only":
+		whereArchived = "vaults.archived = 1"
+	case "include":
+		whereArchived = "1 = 1"
+	case "", "active":
+		whereArchived = "vaults.archived = 0"
+	default:
+		return nil, fmt.Errorf("invalid archived filter")
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT vaults.id, vaults.name, vaults.slug, vaults.kind, vaults.path, vault_members.role, vaults.archived, vaults.remote_url, vaults.last_push_at, vaults.last_push_error, vaults.created_at
 		FROM vaults
 		JOIN vault_members ON vault_members.vault_id = vaults.id
-		WHERE vault_members.user_id = ? AND vaults.archived = 0
+		WHERE vault_members.user_id = ? AND `+whereArchived+`
 		ORDER BY vaults.slug
 	`, userID)
 	if err != nil {

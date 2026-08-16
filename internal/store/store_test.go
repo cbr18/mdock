@@ -259,6 +259,23 @@ func TestVaultManagementState(t *testing.T) {
 	if len(vaults) != 0 {
 		t.Fatalf("visible vault count = %d, want 0", len(vaults))
 	}
+	archiveVaults, err := s.ListVaultsForUserArchived(ctx, user.ID, "only")
+	if err != nil {
+		t.Fatalf("ListVaultsForUserArchived(only) error = %v", err)
+	}
+	if len(archiveVaults) != 1 || !archiveVaults[0].Archived {
+		t.Fatalf("archived vaults = %+v, want archived item", archiveVaults)
+	}
+	allVaults, err := s.ListVaultsForUserArchived(ctx, user.ID, "include")
+	if err != nil {
+		t.Fatalf("ListVaultsForUserArchived(include) error = %v", err)
+	}
+	if len(allVaults) != 1 {
+		t.Fatalf("all vault count = %d, want 1", len(allVaults))
+	}
+	if _, err := s.ListVaultsForUserArchived(ctx, user.ID, "bad-filter"); err == nil {
+		t.Fatal("ListVaultsForUserArchived(bad-filter) error = nil")
+	}
 	restored, err := s.SetVaultArchived(ctx, item.ID, false)
 	if err != nil {
 		t.Fatalf("SetVaultArchived(false) error = %v", err)

@@ -101,7 +101,13 @@ Response содержит `user` и `vault`.
 
 ### `GET /api/vaults`
 
-Список неархивных vault'ов, где пользователь является member.
+Список vault'ов, где пользователь является member.
+
+Query:
+
+- `archived=active` или пусто — только неархивные vaults;
+- `archived=only` — только архивные vaults;
+- `archived=include` — активные и архивные vaults.
 
 ### `POST /api/vaults`
 
