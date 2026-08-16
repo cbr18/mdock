@@ -87,7 +87,7 @@ Plan: [16_08_2026_19_49_codemirror_active_line_live_preview.md](../plans/16_08_2
 - `cd test && docker compose up -d --build` — passed, test stack rebuilt.
 - `./test/run-smoke.sh` — passed.
 - Playwright MCP manual check on `http://127.0.0.1:18081/?page=vault&slug=admin` — passed: live preview editor contains heading/inline/link/wikilink/task/frontmatter/code/table/horizontal-rule classes/widgets, and inactive Markdown markers are hidden in rendered edit mode.
-- Commit: pending.
+- Commit: `f30b92b`.
 
 ## Откат
 
