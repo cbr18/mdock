@@ -1141,6 +1141,38 @@ legend {
   border-top: 1px solid var(--border);
 }
 
+.cm-live-rendered-block {
+  cursor: text;
+}
+
+.cm-live-rendered-block .markdown-preview {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.cm-live-rendered-block .markdown-preview > :first-child {
+  margin-top: 0;
+}
+
+.cm-live-rendered-block .markdown-preview > :last-child {
+  margin-bottom: 0;
+}
+
+.cm-live-rendered-frontmatter .markdown-frontmatter {
+  margin: 0.85em 0;
+}
+
+.cm-live-rendered-thematicBreak .markdown-preview hr {
+  border: 0;
+  border-top: 1px solid var(--border-strong);
+}
+
 .cm-live-code-language {
   display: inline-block;
   margin-left: 8px;

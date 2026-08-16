@@ -1,325 +1,272 @@
-import { Decoration, EditorView, ViewPlugin, WidgetType } from '@codemirror/view';
+import { StateField } from '@codemirror/state';
+import { Decoration, EditorView, WidgetType } from '@codemirror/view';
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import ReactMarkdown from 'react-markdown';
+import { markdownRehypePlugins, markdownRemarkPlugins, splitFrontmatter } from '../files/MarkdownPreview.jsx';
 
-const hidden = Decoration.replace({ inclusive: false });
+export function livePreviewExtension({ frontmatterLabel = 'Frontmatter' } = {}) {
+  const field = StateField.define({
+    create(state) {
+      return buildDecorations(state, frontmatterLabel);
+    },
+    update(decorations, transaction) {
+      if (!transaction.docChanged && !transaction.selection) {
+        return decorations.map(transaction.changes);
+      }
+      return buildDecorations(transaction.state, frontmatterLabel);
+    },
+    provide: (stateField) => EditorView.decorations.from(stateField)
+  });
 
-const inlinePatterns = [
-  { regexp: /\*\*([^*\n]+)\*\*/g, className: 'cm-live-strong', markers: (match) => [[0, 2], [match[0].length - 2, match[0].length]] },
-  { regexp: /(?<!\*)\*([^*\n]+)\*(?!\*)/g, className: 'cm-live-emphasis', markers: (match) => [[0, 1], [match[0].length - 1, match[0].length]] },
-  { regexp: /~~([^~\n]+)~~/g, className: 'cm-live-strike', markers: (match) => [[0, 2], [match[0].length - 2, match[0].length]] },
-  { regexp: /==([^=\n]+)==/g, className: 'cm-live-highlight', markers: (match) => [[0, 2], [match[0].length - 2, match[0].length]] },
-  { regexp: /`([^`\n]+)`/g, className: 'cm-live-inline-code', markers: (match) => [[0, 1], [match[0].length - 1, match[0].length]] }
-];
-
-const livePreviewPlugin = ViewPlugin.fromClass(class {
-  constructor(view) {
-    this.decorations = buildDecorations(view);
-  }
-
-  update(update) {
-    if (update.docChanged || update.viewportChanged || update.selectionSet) {
-      this.decorations = buildDecorations(update.view);
-    }
-  }
-}, {
-  decorations: (plugin) => plugin.decorations
-});
-
-export function livePreviewExtension() {
   return [
-    livePreviewPlugin,
+    field,
     EditorView.theme({
       '&.cm-live-preview': {}
     })
   ];
 }
 
-function buildDecorations(view) {
+function buildDecorations(state, frontmatterLabel) {
   const ranges = [];
-  const activeLines = getActiveLines(view);
-  const frontmatterLines = getFrontmatterLines(view.state.doc);
+  const activeRanges = state.selection.ranges.map((range) => ({
+    from: state.doc.lineAt(range.from).from,
+    to: state.doc.lineAt(range.to).to
+  }));
 
-  for (const { from, to } of view.visibleRanges) {
-    addVisibleRangeDecorations(view, ranges, from, to, activeLines, frontmatterLines);
+  for (const block of splitBlocks(state.doc.toString())) {
+    if (isActiveBlock(block, activeRanges)) {
+      ranges.push(Decoration.line({ class: 'cm-live-active-source-line' }).range(block.from));
+      continue;
+    }
+    ranges.push(Decoration.replace({
+      block: true,
+      widget: new RenderedMarkdownBlockWidget(block, frontmatterLabel),
+      inclusive: false
+    }).range(block.from, block.to));
   }
 
   return Decoration.set(ranges, true);
 }
 
-function addVisibleRangeDecorations(view, ranges, from, to, activeLines, frontmatterLines) {
-  let inFence = isInsideFence(view.state.doc, from);
-
-  for (let pos = from; pos <= to;) {
-    const line = view.state.doc.lineAt(pos);
-    const active = activeLines.has(line.number);
-    const frontmatter = frontmatterLines.has(line.number);
-    const { skipInline, nextInFence } = addLineDecorations(ranges, line, { active, inFence, frontmatter });
-
-    if (!skipInline) {
-      addInlineDecorations(ranges, line, active);
-    }
-
-    inFence = nextInFence;
-    if (line.to >= to) break;
-    pos = line.to + 1;
-  }
+function isActiveBlock(block, activeRanges) {
+  return activeRanges.some((range) => rangesIntersect(block.from, block.to, range.from, range.to));
 }
 
-function addLineDecorations(ranges, line, context) {
-  const { active, inFence, frontmatter } = context;
-  const text = line.text;
+function rangesIntersect(leftFrom, leftTo, rightFrom, rightTo) {
+  return leftFrom <= rightTo && rightFrom <= leftTo;
+}
 
-  if (frontmatter) {
-    addLineClass(ranges, line, `cm-live-frontmatter-line${active ? ' cm-live-active-source-line' : ''}`);
-    if (!active && text.trim() === '---') {
-      addHidden(ranges, line.from, line.to);
-    }
-    return { skipInline: true, nextInFence: inFence };
+function splitBlocks(content) {
+  const lines = content.split('\n');
+  const starts = [];
+  let offset = 0;
+  for (const line of lines) {
+    starts.push(offset);
+    offset += line.length + 1;
   }
 
-  const fence = text.match(/^(\s*)(```|~~~)(.*)$/);
-  if (fence) {
-    addLineClass(ranges, line, `cm-live-codeblock-line cm-live-code-fence-line${active ? ' cm-live-active-source-line' : ''}`);
-    if (!active) {
-      addHidden(ranges, line.from + fence[1].length, line.from + fence[1].length + fence[2].length);
-      if (fence[3]) {
-        addMark(ranges, line.from + fence[1].length + fence[2].length, line.to, 'cm-live-code-language');
+  const blocks = [];
+  let index = 0;
+
+  if (lines[0] === '---') {
+    const end = lines.findIndex((line, lineIndex) => lineIndex > 0 && line === '---');
+    if (end > 0) {
+      blocks.push(createBlock('frontmatter', lines, starts, 0, end));
+      index = end + 1;
+    }
+  }
+
+  while (index < lines.length) {
+    if (isBlank(lines[index])) {
+      index += 1;
+      continue;
+    }
+
+    const start = index;
+    if (isFenceStart(lines[index])) {
+      index += 1;
+      while (index < lines.length && !isFenceStart(lines[index])) {
+        index += 1;
       }
+      if (index < lines.length) index += 1;
+      blocks.push(createBlock('code', lines, starts, start, index - 1));
+      continue;
     }
-    return { skipInline: true, nextInFence: !inFence };
-  }
 
-  if (inFence) {
-    addLineClass(ranges, line, `cm-live-codeblock-line${active ? ' cm-live-active-source-line' : ''}`);
-    return { skipInline: true, nextInFence: inFence };
-  }
-
-  const horizontalRule = text.match(/^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/);
-  if (horizontalRule) {
-    addLineClass(ranges, line, `cm-live-horizontal-rule-line${active ? ' cm-live-active-source-line' : ''}`);
-    if (!active) {
-      addReplaceWidget(ranges, line.from, line.to, new HorizontalRuleWidget());
-    }
-    return { skipInline: true, nextInFence: inFence };
-  }
-
-  const heading = text.match(/^(#{1,6})\s+/);
-  if (heading) {
-    addLineClass(ranges, line, `cm-live-heading-line cm-live-heading-${heading[1].length}${active ? ' cm-live-active-source-line' : ''}`);
-    if (!active) {
-      addHidden(ranges, line.from, line.from + heading[0].length);
-    }
-  }
-
-  const quote = text.match(/^(\s*>+\s?)/);
-  if (quote) {
-    addLineClass(ranges, line, `cm-live-quote-line${active ? ' cm-live-active-source-line' : ''}`);
-    if (!active) {
-      addHidden(ranges, line.from, line.from + quote[1].length);
-    }
-  }
-
-  const task = text.match(/^(\s*)([-*+])\s+\[([ xX])\]\s+/);
-  if (task) {
-    const markerTo = line.from + task[0].length;
-    addLineClass(ranges, line, `cm-live-list-line cm-live-task-line${active ? ' cm-live-active-source-line' : ''}`);
-    if (!active) {
-      addReplaceWidget(ranges, line.from + task[1].length, markerTo, new CheckboxWidget(task[3].toLowerCase() === 'x'));
-    }
-    return { skipInline: false, nextInFence: inFence };
-  }
-
-  const bullet = text.match(/^(\s*)([-*+])\s+/);
-  if (bullet) {
-    addLineClass(ranges, line, `cm-live-list-line${active ? ' cm-live-active-source-line' : ''}`);
-    if (!active) {
-      addReplaceWidget(ranges, line.from + bullet[1].length, line.from + bullet[0].length, new BulletWidget());
-    }
-    return { skipInline: false, nextInFence: inFence };
-  }
-
-  const ordered = text.match(/^(\s*)(\d+\.)\s+/);
-  if (ordered) {
-    addLineClass(ranges, line, `cm-live-list-line${active ? ' cm-live-active-source-line' : ''}`);
-    if (!active) {
-      addMark(ranges, line.from + ordered[1].length, line.from + ordered[1].length + ordered[2].length, 'cm-live-list-number');
-      addHidden(ranges, line.from + ordered[0].length - 1, line.from + ordered[0].length);
-    }
-  }
-
-  if (isTableLine(text)) {
-    addLineClass(ranges, line, `cm-live-table-line${active ? ' cm-live-active-source-line' : ''}`);
-  }
-
-  return { skipInline: false, nextInFence: inFence };
-}
-
-function addInlineDecorations(ranges, line, active) {
-  for (const pattern of inlinePatterns) {
-    pattern.regexp.lastIndex = 0;
-    let match = pattern.regexp.exec(line.text);
-    while (match) {
-      const from = line.from + match.index;
-      const to = from + match[0].length;
-      addMark(ranges, from, to, pattern.className);
-      if (!active) {
-        for (const [start, end] of pattern.markers(match)) {
-          addHidden(ranges, from + start, from + end);
-        }
+    if (isTableStart(lines, index)) {
+      index += 2;
+      while (index < lines.length && isTableRow(lines[index])) {
+        index += 1;
       }
-      match = pattern.regexp.exec(line.text);
+      blocks.push(createBlock('table', lines, starts, start, index - 1));
+      continue;
     }
-  }
 
-  addMarkdownLinks(ranges, line, active);
-  addWikilinks(ranges, line, active);
-}
-
-function addMarkdownLinks(ranges, line, active) {
-  const regexp = /(!?)\[([^\]\n]+)\]\(([^)\n]+)\)/g;
-  let match = regexp.exec(line.text);
-  while (match) {
-    const from = line.from + match.index;
-    const to = from + match[0].length;
-    const labelFrom = from + match[1].length + 1;
-    const labelTo = labelFrom + match[2].length;
-    addMark(ranges, labelFrom, labelTo, match[1] ? 'cm-live-image-label' : 'cm-live-link');
-    if (!active) {
-      addHidden(ranges, from, labelFrom);
-      addHidden(ranges, labelTo, to);
+    if (isListLine(lines[index])) {
+      index += 1;
+      while (index < lines.length && (isListContinuation(lines[index]) || isBlank(lines[index]))) {
+        index += 1;
+      }
+      blocks.push(createBlock('list', lines, starts, start, trimTrailingBlank(lines, start, index - 1)));
+      continue;
     }
-    match = regexp.exec(line.text);
-  }
-}
 
-function addWikilinks(ranges, line, active) {
-  const regexp = /(!?)\[\[([^\]\n]+)\]\]/g;
-  let match = regexp.exec(line.text);
-  while (match) {
-    const from = line.from + match.index;
-    const to = from + match[0].length;
-    const body = match[2];
-    const bodyFrom = from + match[1].length + 2;
-    const aliasIndex = body.indexOf('|');
-    const visibleFrom = aliasIndex >= 0 ? bodyFrom + aliasIndex + 1 : bodyFrom;
-    const visibleTo = bodyFrom + body.length;
-    addMark(ranges, visibleFrom, visibleTo, match[1] ? 'cm-live-embed-label' : 'cm-live-wikilink');
-    if (!active) {
-      addHidden(ranges, from, visibleFrom);
-      addHidden(ranges, visibleTo, to);
+    if (isBlockquoteLine(lines[index])) {
+      index += 1;
+      while (index < lines.length && (isBlockquoteLine(lines[index]) || isBlank(lines[index]))) {
+        index += 1;
+      }
+      blocks.push(createBlock('blockquote', lines, starts, start, trimTrailingBlank(lines, start, index - 1)));
+      continue;
     }
-    match = regexp.exec(line.text);
-  }
-}
 
-function getActiveLines(view) {
-  const lines = new Set();
-  for (const range of view.state.selection.ranges) {
-    const fromLine = view.state.doc.lineAt(range.from);
-    const toLine = view.state.doc.lineAt(range.to);
-    for (let line = fromLine.number; line <= toLine.number; line += 1) {
-      lines.add(line);
+    if (isAtxHeading(lines[index])) {
+      blocks.push(createBlock('heading', lines, starts, start, start));
+      index += 1;
+      continue;
     }
-  }
-  return lines;
-}
 
-function getFrontmatterLines(doc) {
-  const lines = new Set();
-  if (doc.lines < 3) return lines;
-
-  const first = doc.line(1);
-  if (first.text.trim() !== '---') return lines;
-
-  for (let number = 1; number <= doc.lines; number += 1) {
-    const line = doc.line(number);
-    lines.add(number);
-    if (number > 1 && line.text.trim() === '---') {
-      break;
+    if (index + 1 < lines.length && isSetextUnderline(lines[index + 1])) {
+      blocks.push(createBlock('heading', lines, starts, start, index + 1));
+      index += 2;
+      continue;
     }
-    if (number > 80) {
-      lines.clear();
-      break;
+
+    if (isThematicBreak(lines[index])) {
+      blocks.push(createBlock('thematicBreak', lines, starts, start, start));
+      index += 1;
+      continue;
     }
-  }
-  return lines;
-}
 
-function isInsideFence(doc, from) {
-  let inFence = false;
-  let pos = 0;
-  while (pos < from) {
-    const line = doc.lineAt(pos);
-    if (/^\s*(```|~~~)/.test(line.text)) {
-      inFence = !inFence;
+    index += 1;
+    while (index < lines.length && !isBlank(lines[index]) && !startsNewBlock(lines, index)) {
+      index += 1;
     }
-    if (line.to >= from) break;
-    pos = line.to + 1;
+    blocks.push(createBlock('paragraph', lines, starts, start, index - 1));
   }
-  return inFence;
+
+  return blocks;
 }
 
-function isTableLine(text) {
-  return /^\s*\|.*\|\s*$/.test(text) || /^\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(text);
+function createBlock(type, lines, starts, startLine, endLine) {
+  const from = starts[startLine];
+  const to = starts[endLine] + lines[endLine].length;
+  const markdown = lines.slice(startLine, endLine + 1).join('\n');
+  return { type, from, to, markdown };
 }
 
-function addLineClass(ranges, line, className) {
-  ranges.push(Decoration.line({ class: className }).range(line.from));
+function startsNewBlock(lines, index) {
+  return isFenceStart(lines[index])
+    || isTableStart(lines, index)
+    || isListLine(lines[index])
+    || isBlockquoteLine(lines[index])
+    || isAtxHeading(lines[index])
+    || isThematicBreak(lines[index]);
 }
 
-function addMark(ranges, from, to, className) {
-  if (to > from) {
-    ranges.push(Decoration.mark({ class: className }).range(from, to));
+function trimTrailingBlank(lines, start, end) {
+  let nextEnd = end;
+  while (nextEnd > start && isBlank(lines[nextEnd])) {
+    nextEnd -= 1;
   }
+  return nextEnd;
 }
 
-function addHidden(ranges, from, to) {
-  if (to > from) {
-    ranges.push(hidden.range(from, to));
-  }
+function isBlank(line) {
+  return /^\s*$/.test(line);
 }
 
-function addReplaceWidget(ranges, from, to, widget) {
-  if (to > from) {
-    ranges.push(Decoration.replace({ widget, inclusive: false }).range(from, to));
-  }
+function isFenceStart(line) {
+  return /^\s{0,3}(```|~~~)/.test(line);
 }
 
-class CheckboxWidget extends WidgetType {
-  constructor(checked) {
+function isAtxHeading(line) {
+  return /^\s{0,3}#{1,6}(?:\s+|$)/.test(line);
+}
+
+function isSetextUnderline(line) {
+  return /^\s{0,3}(=+|-+)\s*$/.test(line);
+}
+
+function isThematicBreak(line) {
+  return /^\s{0,3}(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$/.test(line);
+}
+
+function isBlockquoteLine(line) {
+  return /^\s{0,3}>/.test(line);
+}
+
+function isListLine(line) {
+  return /^\s{0,3}(?:[-+*]|\d{1,9}[.)])\s+/.test(line);
+}
+
+function isListContinuation(line) {
+  return isListLine(line) || /^\s{2,}\S/.test(line);
+}
+
+function isTableStart(lines, index) {
+  return index + 1 < lines.length && isTableRow(lines[index]) && isTableDelimiter(lines[index + 1]);
+}
+
+function isTableRow(line) {
+  return /^\s*\|?.+\|.+\|?\s*$/.test(line);
+}
+
+function isTableDelimiter(line) {
+  return /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+}
+
+class RenderedMarkdownBlockWidget extends WidgetType {
+  constructor(block, frontmatterLabel) {
     super();
-    this.checked = checked;
+    this.block = block;
+    this.frontmatterLabel = frontmatterLabel;
   }
 
   eq(other) {
-    return other.checked === this.checked;
+    return other.block.markdown === this.block.markdown
+      && other.block.type === this.block.type
+      && other.frontmatterLabel === this.frontmatterLabel;
   }
 
-  toDOM() {
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.checked = this.checked;
-    checkbox.disabled = true;
-    checkbox.className = 'cm-live-task-checkbox';
-    checkbox.setAttribute('aria-hidden', 'true');
-    return checkbox;
-  }
-}
+  toDOM(view) {
+    const container = document.createElement('div');
+    container.className = `cm-live-rendered-block cm-live-rendered-${this.block.type}`;
+    container.addEventListener('mousedown', (event) => {
+      event.preventDefault();
+      view.dispatch({ selection: { anchor: this.block.from }, scrollIntoView: true });
+      view.focus();
+    });
 
-class BulletWidget extends WidgetType {
-  toDOM() {
-    const bullet = document.createElement('span');
-    bullet.className = 'cm-live-bullet';
-    bullet.setAttribute('aria-hidden', 'true');
-    bullet.textContent = '•';
-    return bullet;
+    const root = createRoot(container);
+    container.__mdockLiveRoot = root;
+    root.render(this.renderContent());
+    return container;
   }
-}
 
-class HorizontalRuleWidget extends WidgetType {
-  toDOM() {
-    const rule = document.createElement('span');
-    rule.className = 'cm-live-horizontal-rule';
-    rule.setAttribute('aria-hidden', 'true');
-    return rule;
+  destroy(dom) {
+    dom.__mdockLiveRoot?.unmount();
+  }
+
+  ignoreEvent() {
+    return false;
+  }
+
+  renderContent() {
+    if (this.block.type === 'frontmatter') {
+      const { frontmatter } = splitFrontmatter(`${this.block.markdown}\n`);
+      return React.createElement('section', { className: 'markdown-frontmatter', 'aria-label': this.frontmatterLabel },
+        React.createElement('h4', null, this.frontmatterLabel),
+        React.createElement('pre', null, frontmatter)
+      );
+    }
+
+    return React.createElement('article', { className: 'markdown-preview cm-live-rendered-preview' },
+      React.createElement(ReactMarkdown, {
+        remarkPlugins: markdownRemarkPlugins,
+        rehypePlugins: markdownRehypePlugins
+      }, this.block.markdown)
+    );
   }
 }

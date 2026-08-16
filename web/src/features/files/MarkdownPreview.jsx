@@ -4,6 +4,9 @@ import remarkFrontmatter from 'remark-frontmatter';
 import remarkGfm from 'remark-gfm';
 import { useLanguage } from '../i18n/LanguageProvider.jsx';
 
+export const markdownRemarkPlugins = [remarkGfm, remarkFrontmatter];
+export const markdownRehypePlugins = [rehypeHighlight];
+
 export function MarkdownPreview({ content }) {
   const { t } = useLanguage();
   const { frontmatter, body } = splitFrontmatter(content || '');
@@ -21,8 +24,8 @@ export function MarkdownPreview({ content }) {
         </section>
       ) : null}
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkFrontmatter]}
-        rehypePlugins={[rehypeHighlight]}
+        remarkPlugins={markdownRemarkPlugins}
+        rehypePlugins={markdownRehypePlugins}
       >
         {body}
       </ReactMarkdown>
@@ -30,7 +33,7 @@ export function MarkdownPreview({ content }) {
   );
 }
 
-function splitFrontmatter(content) {
+export function splitFrontmatter(content) {
   if (!content.startsWith('---\n')) {
     return { frontmatter: '', body: content };
   }

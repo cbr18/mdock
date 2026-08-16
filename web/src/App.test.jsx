@@ -209,7 +209,7 @@ test('renders vault file list and markdown preview', async () => {
       });
     }
     if (url === '/api/vaults/work-notes/files/content?path=note.md') {
-      return response({ content: '---\ntags: [test]\n---\n# Note\n\n**bold** [site](https://example.test) [[Page|Alias]]\n\n- [x] done\n\n---' });
+      return response({ content: '---\ntags: [test]\n---\n# Note\n\n**bold** [site](https://example.test) [[Page|Alias]]\n\n- [x] done\n- item\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n---' });
     }
     if (url === '/api/vaults/work-notes/locks') {
       return response({ lock: { path: 'note.md', source: 'web' } });
@@ -256,12 +256,13 @@ test('renders vault file list and markdown preview', async () => {
   fireEvent.click(screen.getByRole('tab', { name: 'Просмотр' }));
   expect((await screen.findAllByLabelText('Markdown-редактор')).length).toBeGreaterThanOrEqual(1);
   await waitFor(() => expect(document.querySelector('.cm-live-preview')).toBeInTheDocument());
-  await waitFor(() => expect(document.querySelector('.cm-live-heading-1')).toBeInTheDocument());
-  expect(document.querySelector('.cm-live-strong')).toBeInTheDocument();
-  expect(document.querySelector('.cm-live-link')).toBeInTheDocument();
-  expect(document.querySelector('.cm-live-wikilink')).toBeInTheDocument();
-  expect(document.querySelector('.cm-live-task-checkbox')).toBeInTheDocument();
-  expect(document.querySelector('.cm-live-horizontal-rule')).toBeInTheDocument();
+  await waitFor(() => expect(document.querySelector('.cm-live-rendered-block h1')).toHaveTextContent('Note'));
+  expect(document.querySelector('.cm-live-rendered-block strong')).toHaveTextContent('bold');
+  expect(document.querySelector('.cm-live-rendered-block a')).toHaveTextContent('site');
+  expect(document.querySelector('.cm-live-rendered-block ul')).toBeInTheDocument();
+  expect(document.querySelector('.cm-live-rendered-block input[type="checkbox"]')).toBeChecked();
+  expect(document.querySelector('.cm-live-rendered-block table')).toBeInTheDocument();
+  expect(document.querySelector('.cm-live-rendered-block hr')).toBeInTheDocument();
   expect(screen.queryByText('Live Preview editing ещё не реализован')).not.toBeInTheDocument();
   expect(screen.getAllByRole('button', { name: 'Сохранить' }).length).toBeGreaterThanOrEqual(1);
   expect(screen.queryByText('tags: [test]')).not.toBeInTheDocument();

@@ -38,10 +38,10 @@ export function MarkdownEditor({ value, dirty, lockStatus, readOnly = false, sav
       items.push(EditorState.readOnly.of(true), EditorView.editable.of(false));
     }
     if (variant === 'live') {
-      items.push(livePreviewExtension(), EditorView.editorAttributes.of({ class: 'cm-live-preview' }));
+      items.push(livePreviewExtension({ frontmatterLabel: t('frontmatter') }), EditorView.editorAttributes.of({ class: 'cm-live-preview' }));
     }
     return items;
-  }, [readOnly, variant]);
+  }, [readOnly, t, variant]);
   const codeMirrorTheme = theme === 'light' || theme === 'warm' ? 'light' : 'dark';
 
   return (
