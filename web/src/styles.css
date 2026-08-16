@@ -930,6 +930,8 @@ legend {
 }
 
 .toolbar-command {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   justify-content: flex-start;
   width: 100%;
   min-height: 34px;
@@ -939,9 +941,22 @@ legend {
   text-align: left;
 }
 
+.toolbar-command small {
+  grid-column: 2;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 .toolbar-command:hover {
   background: var(--surface-hover);
   color: var(--text);
+}
+
+.toolbar-command-disabled,
+.toolbar-command-disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 0.72;
 }
 
 .markdown-editor-shell .cm-editor {

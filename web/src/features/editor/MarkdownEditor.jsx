@@ -25,33 +25,6 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLanguage } from '../i18n/LanguageProvider.jsx';
 import { useTheme } from '../theme/ThemeProvider.jsx';
-import {
-  ensureFrontmatter,
-  indentLines,
-  insertBlockMath,
-  insertCallout,
-  insertCodeBlock,
-  insertEmbed,
-  insertFootnote,
-  insertHorizontalRule,
-  insertImage,
-  insertInlineMath,
-  insertMarkdownLink,
-  insertTable,
-  insertWikilink,
-  outdentLines,
-  setHeading,
-  setParagraph,
-  toggleBlockquote,
-  toggleBulletList,
-  toggleComment,
-  toggleInlineCode,
-  toggleInlineMark,
-  toggleOrderedList,
-  toggleTaskDone,
-  toggleTaskList
-} from './markdownActions.js';
-
 export function MarkdownEditor({ value, dirty, lockStatus, readOnly = false, saveDisabled, onChange, onSave }) {
   const viewRef = useRef(null);
   const [openMenu, setOpenMenu] = useState('');
@@ -66,25 +39,6 @@ export function MarkdownEditor({ value, dirty, lockStatus, readOnly = false, sav
   }, [readOnly]);
   const codeMirrorTheme = theme === 'light' || theme === 'warm' ? 'light' : 'dark';
 
-  function run(action) {
-    if (readOnly) return;
-    const view = viewRef.current;
-    if (!view) return;
-    const doc = view.state.doc.toString();
-    const selection = view.state.selection.main;
-    const next = action({
-      text: doc,
-      selectionStart: selection.from,
-      selectionEnd: selection.to
-    });
-    view.dispatch({
-      changes: { from: 0, to: doc.length, insert: next.text },
-      selection: { anchor: next.selectionStart, head: next.selectionEnd }
-    });
-    onChange(next.text);
-    view.focus();
-  }
-
   return (
     <section className="markdown-editor-shell" aria-label={t('markdownEditor')}>
       {!readOnly ? (
@@ -95,41 +49,41 @@ export function MarkdownEditor({ value, dirty, lockStatus, readOnly = false, sav
           </button>
           <span className={`editor-lock-status editor-lock-${lockStatus}`} role="status" aria-live="polite">{t(lockStatusKey(lockStatus))}</span>
           <ToolbarMenu name="paragraph" icon={<Pilcrow size={16} aria-hidden="true" />} label={t('paragraph')} openMenu={openMenu} setOpenMenu={setOpenMenu}>
-            <ToolbarButton icon={<Pilcrow size={16} aria-hidden="true" />} label={t('paragraph')} onClick={() => run(setParagraph)} />
+            <ToolbarButton icon={<Pilcrow size={16} aria-hidden="true" />} label={t('paragraph')} />
           {[1, 2, 3, 4, 5, 6].map((level) => (
-            <ToolbarButton key={level} icon={<Heading size={16} aria-hidden="true" />} label={t(`heading${level}`)} onClick={() => run((state) => setHeading(state, level))} />
+            <ToolbarButton key={level} icon={<Heading size={16} aria-hidden="true" />} label={t(`heading${level}`)} />
           ))}
-          <ToolbarButton icon={<Quote size={16} aria-hidden="true" />} label={t('quote')} onClick={() => run(toggleBlockquote)} />
-          <ToolbarButton icon={<Code2 size={16} aria-hidden="true" />} label={t('codeBlock')} onClick={() => run((state) => insertCodeBlock(state, ''))} />
+          <ToolbarButton icon={<Quote size={16} aria-hidden="true" />} label={t('quote')} />
+          <ToolbarButton icon={<Code2 size={16} aria-hidden="true" />} label={t('codeBlock')} />
         </ToolbarMenu>
           <ToolbarMenu name="inline" icon={<Bold size={16} aria-hidden="true" />} label={t('inlineFormatting')} openMenu={openMenu} setOpenMenu={setOpenMenu}>
-          <ToolbarButton icon={<Bold size={16} aria-hidden="true" />} label={t('bold')} onClick={() => run((state) => toggleInlineMark(state, '**'))} />
-          <ToolbarButton icon={<Italic size={16} aria-hidden="true" />} label={t('italic')} onClick={() => run((state) => toggleInlineMark(state, '*'))} />
-          <ToolbarButton icon={<Strikethrough size={16} aria-hidden="true" />} label={t('strikethrough')} onClick={() => run((state) => toggleInlineMark(state, '~~'))} />
-          <ToolbarButton icon={<Highlighter size={16} aria-hidden="true" />} label={t('highlight')} onClick={() => run((state) => toggleInlineMark(state, '=='))} />
-          <ToolbarButton icon={<Code2 size={16} aria-hidden="true" />} label={t('inlineCode')} onClick={() => run(toggleInlineCode)} />
-          <ToolbarButton icon={<MessageSquare size={16} aria-hidden="true" />} label={t('comment')} onClick={() => run(toggleComment)} />
+          <ToolbarButton icon={<Bold size={16} aria-hidden="true" />} label={t('bold')} />
+          <ToolbarButton icon={<Italic size={16} aria-hidden="true" />} label={t('italic')} />
+          <ToolbarButton icon={<Strikethrough size={16} aria-hidden="true" />} label={t('strikethrough')} />
+          <ToolbarButton icon={<Highlighter size={16} aria-hidden="true" />} label={t('highlight')} />
+          <ToolbarButton icon={<Code2 size={16} aria-hidden="true" />} label={t('inlineCode')} />
+          <ToolbarButton icon={<MessageSquare size={16} aria-hidden="true" />} label={t('comment')} />
         </ToolbarMenu>
           <ToolbarMenu name="lists" icon={<List size={16} aria-hidden="true" />} label={t('listFormatting')} openMenu={openMenu} setOpenMenu={setOpenMenu}>
-          <ToolbarButton icon={<List size={16} aria-hidden="true" />} label={t('bulletList')} onClick={() => run(toggleBulletList)} />
-          <ToolbarButton icon={<ListOrdered size={16} aria-hidden="true" />} label={t('orderedList')} onClick={() => run(toggleOrderedList)} />
-          <ToolbarButton icon={<CheckSquare size={16} aria-hidden="true" />} label={t('taskList')} onClick={() => run(toggleTaskList)} />
-          <ToolbarButton icon={<CheckSquare size={16} aria-hidden="true" />} label={t('taskDone')} onClick={() => run(toggleTaskDone)} />
-          <ToolbarButton label={t('indent')} onClick={() => run(indentLines)} />
-          <ToolbarButton label={t('outdent')} onClick={() => run(outdentLines)} />
+          <ToolbarButton icon={<List size={16} aria-hidden="true" />} label={t('bulletList')} />
+          <ToolbarButton icon={<ListOrdered size={16} aria-hidden="true" />} label={t('orderedList')} />
+          <ToolbarButton icon={<CheckSquare size={16} aria-hidden="true" />} label={t('taskList')} />
+          <ToolbarButton icon={<CheckSquare size={16} aria-hidden="true" />} label={t('taskDone')} />
+          <ToolbarButton label={t('indent')} />
+          <ToolbarButton label={t('outdent')} />
         </ToolbarMenu>
           <ToolbarMenu name="insert" icon={<Rows2 size={16} aria-hidden="true" />} label={t('insert')} openMenu={openMenu} setOpenMenu={setOpenMenu}>
-          <ToolbarButton icon={<Link size={16} aria-hidden="true" />} label={t('link')} onClick={() => run((state) => insertMarkdownLink(state, 'https://'))} />
-          <ToolbarButton icon={<Image size={16} aria-hidden="true" />} label={t('image')} onClick={() => run((state) => insertImage(state, 'https://'))} />
-          <ToolbarButton label={t('wikilink')} onClick={() => run((state) => insertWikilink(state))} />
-          <ToolbarButton label={t('embed')} onClick={() => run((state) => insertEmbed(state))} />
-          <ToolbarButton icon={<Rows2 size={16} aria-hidden="true" />} label={t('table')} onClick={() => run((state) => insertTable(state, 2, 2))} />
-          <ToolbarButton icon={<Quote size={16} aria-hidden="true" />} label={t('callout')} onClick={() => run((state) => insertCallout(state, 'note'))} />
-          <ToolbarButton icon={<Minus size={16} aria-hidden="true" />} label={t('horizontalRule')} onClick={() => run(insertHorizontalRule)} />
-          <ToolbarButton icon={<Sigma size={16} aria-hidden="true" />} label={t('inlineMath')} onClick={() => run(insertInlineMath)} />
-          <ToolbarButton icon={<Sigma size={16} aria-hidden="true" />} label={t('blockMath')} onClick={() => run(insertBlockMath)} />
-          <ToolbarButton label={t('footnote')} onClick={() => run((state) => insertFootnote(state, '1', ''))} />
-          <ToolbarButton label={t('metadata')} onClick={() => run((state) => ensureFrontmatter(state, { tags: [] }))} />
+          <ToolbarButton icon={<Link size={16} aria-hidden="true" />} label={t('link')} />
+          <ToolbarButton icon={<Image size={16} aria-hidden="true" />} label={t('image')} />
+          <ToolbarButton label={t('wikilink')} />
+          <ToolbarButton label={t('embed')} />
+          <ToolbarButton icon={<Rows2 size={16} aria-hidden="true" />} label={t('table')} />
+          <ToolbarButton icon={<Quote size={16} aria-hidden="true" />} label={t('callout')} />
+          <ToolbarButton icon={<Minus size={16} aria-hidden="true" />} label={t('horizontalRule')} />
+          <ToolbarButton icon={<Sigma size={16} aria-hidden="true" />} label={t('inlineMath')} />
+          <ToolbarButton icon={<Sigma size={16} aria-hidden="true" />} label={t('blockMath')} />
+          <ToolbarButton label={t('footnote')} />
+          <ToolbarButton label={t('metadata')} />
         </ToolbarMenu>
         </div>
       ) : null}
@@ -184,11 +138,13 @@ function ToolbarMenu({ name, icon, label, openMenu, setOpenMenu, children }) {
   );
 }
 
-function ToolbarButton({ icon, label, onClick }) {
+function ToolbarButton({ icon, label }) {
+  const { t } = useLanguage();
   return (
-    <button type="button" className="toolbar-command" onClick={onClick}>
+    <button type="button" className="toolbar-command toolbar-command-disabled" disabled title={t('notImplementedYet')}>
       {icon}
       <span>{label}</span>
+      <small>{t('notImplementedYet')}</small>
     </button>
   );
 }

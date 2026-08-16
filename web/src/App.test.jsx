@@ -246,7 +246,7 @@ test('renders vault file list and markdown preview', async () => {
 
   fireEvent.click(screen.getByRole('button', { name: 'Абзац' }));
   expect(await screen.findByRole('menu')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Заголовок 1' })).toBeInTheDocument();
+  expect(screen.getAllByText('Не реализовано пока').length).toBeGreaterThanOrEqual(1);
 
   fireEvent.click(screen.getByRole('tab', { name: 'Две панели' }));
   expect(screen.getAllByText('tags: [test]').length).toBeGreaterThanOrEqual(1);
