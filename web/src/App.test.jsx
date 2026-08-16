@@ -7,6 +7,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   localStorage.clear();
+  window.history.replaceState(null, '', '/');
 });
 
 test('renders auth form when session is absent', async () => {
@@ -31,6 +32,9 @@ test('logs in and shows vault webdav url', async () => {
     if (url === '/api/vaults') {
       return response({ vaults: [{ id: 1, slug: 'alice', kind: 'personal', role: 'owner' }] });
     }
+    if (url === '/api/vaults?archived=only') {
+      return response({ vaults: [] });
+    }
     return response({}, 404);
   }));
 
@@ -40,7 +44,7 @@ test('logs in and shows vault webdav url', async () => {
   fireEvent.change(screen.getByLabelText('Пароль'), { target: { value: 'secret' } });
   fireEvent.click(screen.getByRole('button', { name: 'Войти' }));
 
-  await waitFor(() => expect(screen.getByRole('heading', { name: 'Vaults' })).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'Хранилища' })).toBeInTheDocument());
   expect(screen.getByDisplayValue('http://localhost:3000/webdav/alice/')).toBeInTheDocument();
 });
 
@@ -52,15 +56,18 @@ test('persists selected theme and accent', async () => {
     if (url === '/api/vaults') {
       return response({ vaults: [] });
     }
+    if (url === '/api/vaults?archived=only') {
+      return response({ vaults: [] });
+    }
     return response({}, 404);
   }));
 
   render(<App />);
 
-  await screen.findByRole('heading', { name: 'Vaults' });
+  await screen.findByRole('heading', { name: 'Хранилища' });
   fireEvent.click(screen.getByLabelText('Настройки темы'));
   fireEvent.click(screen.getByRole('button', { name: 'Белый' }));
-  fireEvent.click(screen.getByLabelText('Blue'));
+  fireEvent.click(screen.getByLabelText('Синий'));
 
   expect(localStorage.getItem('mdock.theme')).toBe('light');
   expect(localStorage.getItem('mdock.accent')).toBe('blue');
@@ -78,15 +85,215 @@ test('resets scroll position on internal navigation', async () => {
     if (url === '/api/vaults') {
       return response({ vaults: [] });
     }
+    if (url === '/api/vaults?archived=only') {
+      return response({ vaults: [] });
+    }
     return response({}, 404);
   }));
 
   render(<App />);
 
-  await screen.findByRole('heading', { name: 'Vaults' });
-  fireEvent.click(screen.getByRole('button', { name: 'Account' }));
+  await screen.findByRole('heading', { name: 'Хранилища' });
+  fireEvent.click(screen.getByRole('link', { name: 'Аккаунт' }));
 
   expect(scrollTo).toHaveBeenCalledWith({ top: 0, left: 0, behavior: 'instant' });
+});
+
+test('opens archive tab and restores archived vault', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url) => {
+    if (url === '/api/auth/me') {
+      return response({ username: 'admin', is_admin: true });
+    }
+    if (url === '/api/vaults') {
+      return response({ vaults: [] });
+    }
+    if (url === '/api/vaults?archived=only') {
+      return response({ vaults: [{ id: 2, slug: 'old-notes', name: 'Old Notes', kind: 'shared', role: 'owner', archived: true }] });
+    }
+    return response({}, 404);
+  }));
+
+  render(<App />);
+
+  await screen.findByRole('heading', { name: 'Хранилища' });
+  fireEvent.click(screen.getByRole('tab', { name: 'Архив' }));
+
+  expect(screen.getByRole('heading', { name: 'Old Notes' })).toBeInTheDocument();
+});
+
+test('supports browser back after opening a vault', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  vi.stubGlobal('fetch', vi.fn(async (url) => {
+    if (url === '/api/auth/me') {
+      return response({ username: 'admin', is_admin: true });
+    }
+    if (url === '/api/vaults') {
+      return response({ vaults: [{ id: 1, slug: 'work-notes', name: 'Work Notes', kind: 'shared', role: 'owner' }] });
+    }
+    if (url === '/api/vaults?archived=only') {
+      return response({ vaults: [] });
+    }
+    if (url === '/api/vaults/work-notes') {
+      return response({ vault: { id: 1, slug: 'work-notes', name: 'Work Notes', path: 'vault-1', kind: 'shared', role: 'owner', archived: false } });
+    }
+    if (url === '/api/vaults/work-notes/members') {
+      return response({ members: [] });
+    }
+    if (url === '/api/vaults/work-notes/git/status') {
+      return response({ dirty: false, queue_len: 0 });
+    }
+    if (url === '/api/vaults/work-notes/git/commits?limit=20') {
+      return response({ commits: [] });
+    }
+    if (url === '/api/vaults/work-notes/git/remote') {
+      return response({ remote_url: '', last_push_at: '', last_push_error: '' });
+    }
+    if (url === '/api/vaults/work-notes/webdav') {
+      return response({ webdav: { url: 'http://localhost:3000/webdav/work-notes/' } });
+    }
+    if (url === '/api/vaults/work-notes/files?path=.') {
+      return response({ entries: [] });
+    }
+    return response({}, 404);
+  }));
+
+  render(<App />);
+
+  await screen.findByRole('heading', { name: 'Хранилища' });
+  fireEvent.click(screen.getByRole('button', { name: /Work Notes/ }));
+  expect(await screen.findByLabelText('Хлебные крошки')).toBeInTheDocument();
+  expect(window.location.search).toBe('?page=vault&slug=work-notes');
+
+  window.history.back();
+  window.dispatchEvent(new PopStateEvent('popstate'));
+
+  expect(await screen.findByRole('heading', { name: 'Хранилища' })).toBeInTheDocument();
+});
+
+test('renders vault file list and markdown preview', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  const fetchMock = vi.fn(async (url) => {
+    if (url === '/api/auth/me') {
+      return response({ username: 'admin', is_admin: true });
+    }
+    if (url === '/api/vaults') {
+      return response({ vaults: [{ id: 1, slug: 'work-notes', name: 'Work Notes', kind: 'shared', role: 'owner' }] });
+    }
+    if (url === '/api/vaults?archived=only') {
+      return response({ vaults: [] });
+    }
+    if (url === '/api/vaults/work-notes') {
+      return response({ vault: { id: 1, slug: 'work-notes', name: 'Work Notes', path: 'vault-1', kind: 'shared', role: 'owner', archived: false } });
+    }
+    if (url === '/api/vaults/work-notes/members') {
+      return response({ members: [] });
+    }
+    if (url === '/api/vaults/work-notes/git/status') {
+      return response({ dirty: false, queue_len: 0 });
+    }
+    if (url === '/api/vaults/work-notes/git/commits?limit=20') {
+      return response({ commits: [] });
+    }
+    if (url === '/api/vaults/work-notes/git/remote') {
+      return response({ remote_url: '', last_push_at: '', last_push_error: '' });
+    }
+    if (url === '/api/vaults/work-notes/webdav') {
+      return response({ webdav: { url: 'http://localhost:3000/webdav/work-notes/' } });
+    }
+    if (url === '/api/vaults/work-notes/files?path=.') {
+      return response({
+        entries: [
+          { name: 'folder', path: 'folder', is_dir: true, size: 0, mod_time: '2026-08-15T10:00:00Z' },
+          { name: 'note.md', path: 'note.md', is_dir: false, size: 41, mod_time: '2026-08-15T10:00:00Z' }
+        ]
+      });
+    }
+    if (url === '/api/vaults/work-notes/files/content?path=note.md') {
+      return response({ content: '---\ntags: [test]\n---\n# Note\n\n- [x] done' });
+    }
+    if (url === '/api/vaults/work-notes/locks') {
+      return response({ lock: { path: 'note.md', source: 'web' } });
+    }
+    return response({}, 404);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  render(<App />);
+
+  await screen.findByRole('heading', { name: 'Хранилища' });
+  fireEvent.click(screen.getByRole('button', { name: /Work Notes/ }));
+  expect(await screen.findByRole('button', { name: /note.md/ })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: /note.md/ }));
+
+  expect(await screen.findByRole('heading', { name: 'Note' })).toBeInTheDocument();
+  expect(screen.getByText('tags: [test]')).toBeInTheDocument();
+  expect(screen.getByRole('checkbox', { checked: true })).toBeChecked();
+  expect(screen.getByLabelText('Редактирование')).not.toBeChecked();
+  expect(screen.queryByLabelText('Markdown-редактор')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+  expect(fetchMock).not.toHaveBeenCalledWith('/api/vaults/work-notes/locks', expect.anything());
+
+  fireEvent.click(screen.getByRole('tab', { name: 'Исходник' }));
+  expect((await screen.findAllByLabelText('Markdown-редактор')).length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+  expect(window.location.search).toContain('view=plain');
+
+  fireEvent.click(screen.getByLabelText('Редактирование'));
+  expect(await screen.findByText('Lock активен')).toBeInTheDocument();
+  expect((await screen.findAllByRole('button', { name: 'Сохранить' })).length).toBeGreaterThanOrEqual(1);
+  expect(fetchMock).toHaveBeenCalledWith('/api/vaults/work-notes/locks', expect.anything());
+
+  fireEvent.click(screen.getByRole('button', { name: 'Абзац' }));
+  expect(await screen.findByRole('menu')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Заголовок 1' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('tab', { name: 'Две панели' }));
+  expect(screen.getAllByText('tags: [test]').length).toBeGreaterThanOrEqual(1);
+  expect((await screen.findAllByLabelText('Markdown-редактор')).length).toBeGreaterThanOrEqual(1);
+  expect(window.location.search).toContain('view=split');
+
+  fireEvent.click(screen.getByRole('tab', { name: 'Просмотр' }));
+  expect(await screen.findByText('Live Preview editing ещё не реализован')).toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: 'Сохранить' }).length).toBeGreaterThanOrEqual(1);
+  expect(screen.queryByText('tags: [test]')).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('tab', { name: 'Настройки хранилища' }));
+  expect(await screen.findByRole('heading', { name: 'Хранилище' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Статус Git' })).toBeInTheDocument();
+  expect(window.location.search).toContain('section=settings');
+});
+
+test('does not load files for archived vault page', async () => {
+  const fetchMock = vi.fn(async (url) => {
+    if (url === '/api/auth/me') {
+      return response({ username: 'admin', is_admin: true });
+    }
+    if (url === '/api/vaults') {
+      return response({ vaults: [] });
+    }
+    if (url === '/api/vaults?archived=only') {
+      return response({ vaults: [{ id: 2, slug: 'old-notes', name: 'Old Notes', kind: 'shared', role: 'owner', archived: true }] });
+    }
+    if (url === '/api/vaults/old-notes') {
+      return response({ vault: { id: 2, slug: 'old-notes', name: 'Old Notes', path: 'vault-2', kind: 'shared', role: 'owner', archived: true } });
+    }
+    if (url === '/api/vaults/old-notes/members') {
+      return response({ members: [] });
+    }
+    return response({}, 404);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  render(<App />);
+
+  await screen.findByRole('heading', { name: 'Хранилища' });
+  fireEvent.click(screen.getByRole('tab', { name: 'Архив' }));
+  fireEvent.click(await screen.findByRole('button', { name: /Old Notes/ }));
+
+  expect(await screen.findByText('Архивное хранилище скрыто от рабочих Git/WebDAV операций.')).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Файлы' })).not.toBeInTheDocument();
+  expect(fetchMock).not.toHaveBeenCalledWith('/api/vaults/old-notes/files?path=.', expect.anything());
 });
 
 function response(payload, status = 200) {

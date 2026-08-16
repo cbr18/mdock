@@ -1,6 +1,6 @@
-export function Panel({ title, icon, actions, children }) {
+export function Panel({ title, icon, actions, children, className = '' }) {
   return (
-    <section className="panel">
+    <section className={`panel ${className}`.trim()}>
       {(title || actions) ? (
         <div className="panel-header">
           <div className="panel-title">

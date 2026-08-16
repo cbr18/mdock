@@ -1,7 +1,8 @@
 import { api } from './client.js';
 
-export function listVaults() {
-  return api('/api/vaults');
+export function listVaults(archived = 'active') {
+  const query = archived && archived !== 'active' ? `?archived=${encodeURIComponent(archived)}` : '';
+  return api(`/api/vaults${query}`);
 }
 
 export function createVault(name) {

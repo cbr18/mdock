@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { login, setupFirstAdmin } from '../../api/auth.js';
 import { StatusMessage } from '../../components/ui/StatusMessage.jsx';
+import { useLanguage } from '../i18n/LanguageProvider.jsx';
 
 export function AuthPage({ onAuthenticated }) {
   const [authMode, setAuthMode] = useState('login');
@@ -9,10 +10,11 @@ export function AuthPage({ onAuthenticated }) {
   const [password, setPassword] = useState('');
   const [setupToken, setSetupToken] = useState('');
   const [message, setMessage] = useState('');
+  const { t } = useLanguage();
 
   async function handleAuth(event) {
     event.preventDefault();
-    setMessage(authMode === 'login' ? 'Проверяем доступ...' : 'Создаём первого администратора...');
+    setMessage(authMode === 'login' ? t('loading') : t('creatingAdmin'));
     try {
       const payload = authMode === 'login'
         ? await login(username, password)
@@ -23,10 +25,10 @@ export function AuthPage({ onAuthenticated }) {
       onAuthenticated({ username: payload.username, is_admin: payload.user?.is_admin ?? payload.is_admin ?? false });
     } catch (error) {
       if (error.status === 403 && error.message === 'registration_closed') {
-        setMessage('Регистрация уже закрыта');
+        setMessage(t('registrationClosed'));
         return;
       }
-      setMessage(authMode === 'login' ? 'Не удалось выполнить вход' : 'Не удалось создать администратора');
+      setMessage(authMode === 'login' ? t('failedLogin') : t('failedCreateAdmin'));
     }
   }
 
@@ -37,28 +39,31 @@ export function AuthPage({ onAuthenticated }) {
           <ShieldCheck aria-hidden="true" size={22} />
           <h1 id="auth-title">mdock</h1>
         </div>
-        <div className="mode-switch" role="tablist" aria-label="Режим авторизации">
-          <button type="button" className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')}>
-            Вход
+        <div className="mode-switch" role="tablist" aria-label={t('loginMode')}>
+          <button type="button" role="tab" aria-selected={authMode === 'login'} className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')}>
+            {t('loginMode')}
           </button>
-          <button type="button" className={authMode === 'setup' ? 'active' : ''} onClick={() => setAuthMode('setup')}>
-            Setup
+          <button type="button" role="tab" aria-selected={authMode === 'setup'} className={authMode === 'setup' ? 'active' : ''} onClick={() => setAuthMode('setup')}>
+            {t('setupMode')}
           </button>
         </div>
         <form onSubmit={handleAuth}>
           <label>
-            Логин
+            {t('login')}
             <input
               autoComplete="username"
+              name="username"
               required
+              spellCheck={false}
               value={username}
               onChange={(event) => setUsername(event.target.value)}
             />
           </label>
           <label>
-            Пароль
+            {t('password')}
             <input
               autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+              name="password"
               required
               type="password"
               value={password}
@@ -67,15 +72,17 @@ export function AuthPage({ onAuthenticated }) {
           </label>
           {authMode === 'setup' ? (
             <label>
-              Setup token
+              {t('setupToken')}
               <input
                 autoComplete="one-time-code"
+                name="setup-token"
+                spellCheck={false}
                 value={setupToken}
                 onChange={(event) => setSetupToken(event.target.value)}
               />
             </label>
           ) : null}
-          <button type="submit">{authMode === 'login' ? 'Войти' : 'Создать admin'}</button>
+          <button type="submit">{authMode === 'login' ? t('loginAction') : t('createAdmin')}</button>
         </form>
         <StatusMessage className="inline-status">{message}</StatusMessage>
       </section>

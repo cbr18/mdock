@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Copy, Database } from 'lucide-react';
+import { useLanguage } from '../i18n/LanguageProvider.jsx';
 
 export function VaultCard({ vault, onOpen }) {
   const webdavURL = useMemo(() => `${window.location.origin}/webdav/${vault.slug}/`, [vault.slug]);
   const [copied, setCopied] = useState(false);
+  const { t } = useLanguage();
 
   async function copyURL() {
     await navigator.clipboard?.writeText(webdavURL);
@@ -17,19 +19,19 @@ export function VaultCard({ vault, onOpen }) {
         <Database size={20} aria-hidden="true" />
         <button type="button" className="vault-title-button" onClick={() => onOpen(vault.slug)}>
           <h3>{vault.name || vault.slug}</h3>
-          <p>{vault.kind} · {vault.role}</p>
+          <p>{vault.kind} · {vault.role}{vault.archived ? ` · ${t('archived')}` : ''}</p>
         </button>
       </div>
       <label>
-        WebDAV URL
+        {t('webdavURL')}
         <div className="url-row">
-          <input readOnly value={webdavURL} />
-          <button type="button" className="icon-button" onClick={copyURL} title="Скопировать WebDAV URL" aria-label="Скопировать WebDAV URL">
+          <input readOnly name={`webdav-url-${vault.slug}`} aria-label={t('webdavURL')} value={webdavURL} />
+          <button type="button" className="icon-button" onClick={copyURL} title={t('copyWebDAV')} aria-label={t('copyWebDAV')}>
             <Copy size={18} aria-hidden="true" />
           </button>
         </div>
       </label>
-      {copied ? <p role="status" className="copy-status">Скопировано</p> : null}
+      {copied ? <p role="status" className="copy-status">{t('copied')}</p> : null}
     </article>
   );
 }

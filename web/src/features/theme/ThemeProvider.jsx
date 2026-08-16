@@ -1,19 +1,19 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 export const BACKGROUND_THEMES = [
-  { id: 'dark', label: 'Темно-серый' },
-  { id: 'black', label: 'Чёрный' },
-  { id: 'warm', label: 'Бежевый' },
-  { id: 'light', label: 'Белый' }
+  { id: 'dark', labelKey: 'dark' },
+  { id: 'black', labelKey: 'black' },
+  { id: 'warm', labelKey: 'warm' },
+  { id: 'light', labelKey: 'light' }
 ];
 
 export const ACCENT_COLORS = [
-  { id: 'violet', label: 'Violet' },
-  { id: 'blue', label: 'Blue' },
-  { id: 'cyan', label: 'Cyan' },
-  { id: 'green', label: 'Green' },
-  { id: 'amber', label: 'Amber' },
-  { id: 'rose', label: 'Rose' }
+  { id: 'violet', labelKey: 'violet' },
+  { id: 'blue', labelKey: 'blue' },
+  { id: 'cyan', labelKey: 'cyan' },
+  { id: 'green', labelKey: 'green' },
+  { id: 'amber', labelKey: 'amber' },
+  { id: 'rose', labelKey: 'rose' }
 ];
 
 const ThemeContext = createContext(null);
