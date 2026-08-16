@@ -85,7 +85,7 @@ Plan: [16_08_2026_20_04_rendered_block_live_preview.md](../plans/16_08_2026_20_0
 - `cd test && docker compose up -d --build` — passed, test stack rebuilt.
 - `./test/run-smoke.sh` — passed.
 - Playwright MCP manual check on `http://127.0.0.1:18081/?page=vault&slug=admin` — passed: live editor contains rendered `h1`, `table`, `ul`, task checkboxes, `blockquote`, `pre code`, `hr`; click on rendered heading reveals Markdown source.
-- Commit: pending.
+- Commit: `29bb3b3`.
 
 ## Откат
 
