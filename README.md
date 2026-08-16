@@ -132,13 +132,13 @@ The dev/test stack lives in `./test/docker-compose.yml` and uses separate test v
 Render config:
 
 ```bash
-docker compose --env-file test/.env.test.example -f test/docker-compose.yml config
+cd test && docker compose config
 ```
 
 Run the stack manually:
 
 ```bash
-docker compose --env-file test/.env.test.example -f test/docker-compose.yml up -d --build
+cd test && docker compose up -d --build
 ```
 
 Run smoke tests against the already running test stack:
@@ -150,7 +150,7 @@ Run smoke tests against the already running test stack:
 Stop the stack:
 
 ```bash
-docker compose --env-file test/.env.test.example -f test/docker-compose.yml down
+cd test && docker compose down
 ```
 
 ## Local Checks
@@ -161,7 +161,7 @@ go build -mod=vendor -buildvcs=false ./cmd/mdock
 cd web && npm test
 cd web && npm run build
 docker compose config
-docker compose --env-file test/.env.test.example -f test/docker-compose.yml config
+cd test && docker compose config
 ```
 
 Docker build uses vendored Go dependencies, so backend image builds do not need to download Go modules during the Docker build stage.

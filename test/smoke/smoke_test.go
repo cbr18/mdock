@@ -17,7 +17,7 @@ import (
 )
 
 func TestRunningTestStack(t *testing.T) {
-	baseURL := getenv("TEST_BASE_URL", "http://127.0.0.1:18080")
+	baseURL := getenv("TEST_BASE_URL", "http://127.0.0.1:18081")
 	username := getenv("BOOTSTRAP_USERNAME", "admin")
 	password := getenv("BOOTSTRAP_PASSWORD", "test-password")
 
@@ -205,7 +205,7 @@ func TestRunningTestStack(t *testing.T) {
 }
 
 func TestRemotelySaveWebDAVCompatibility(t *testing.T) {
-	baseURL := getenv("TEST_BASE_URL", "http://127.0.0.1:18080")
+	baseURL := getenv("TEST_BASE_URL", "http://127.0.0.1:18081")
 	adminUsername := getenv("BOOTSTRAP_USERNAME", "admin")
 	adminPassword := getenv("BOOTSTRAP_PASSWORD", "test-password")
 
@@ -344,7 +344,7 @@ func TestRemotelySaveWebDAVCompatibility(t *testing.T) {
 }
 
 func TestAdminUserManagementAPI(t *testing.T) {
-	baseURL := getenv("TEST_BASE_URL", "http://127.0.0.1:18080")
+	baseURL := getenv("TEST_BASE_URL", "http://127.0.0.1:18081")
 	adminUsername := getenv("BOOTSTRAP_USERNAME", "admin")
 	adminPassword := getenv("BOOTSTRAP_PASSWORD", "test-password")
 

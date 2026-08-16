@@ -21,6 +21,19 @@ The project is new. Do not assume any previous architecture, service names, depl
 - When changing code, keep related documentation and contract notes up to date in the same task when such documentation exists.
 - Prefer existing project patterns, dependencies, tools, and style over introducing new ones.
 
+## Negative Scenarios To Avoid
+
+- Do not mix the root production stack and the `test/` stack. Treat them as different environments.
+- Do not change or guess ports during a task. The canonical local test URL is `http://127.0.0.1:18081`.
+- Do not start the test stack from the repository root with `docker compose --env-file ... -f test/docker-compose.yml ...`.
+- Do not introduce helper scripts or alternative commands for test-stack startup unless the user explicitly asks for them.
+- Do not say that UI changes are ready for user testing until the actual test container the user opens has been rebuilt and restarted.
+- Do not continue implementing a feature when the user asked only to create or record a future task.
+- Do not blur discussion, planning, and implementation. If the user asks to discuss architecture or UX, report findings and wait for implementation approval.
+- Do not claim editor/viewer behavior works without testing the exact mode in the running UI.
+- Do not create broad UI changes while the current request is about infrastructure, stack startup, or process cleanup.
+- Do not leave task files in `Status: IN WORK` when implementation has been paused, cancelled, or deferred.
+
 ## Tasks And Plans
 
 - Проектные задачи хранятся в `tasks/`.
@@ -78,6 +91,16 @@ The project is new. Do not assume any previous architecture, service names, depl
 - Text colors must be derived from the selected background theme so contrast remains readable on black, dark-gray, beige/warm, and white backgrounds.
 - Persist theme and accent choice in `localStorage` for MVP. Do not add backend user preferences until explicitly requested.
 
+## Frontend I18n
+
+- All user-facing frontend text must be available in Russian and English through the global i18n dictionary/provider.
+- Do not hardcode visible UI text directly inside pages, feature components, forms, buttons, tabs, tooltips, empty states, error messages, or aria labels when an i18n key can be used.
+- When adding or changing a UI string, update both `ru` and `en` translations in the same task.
+- The language switcher is global and must affect the whole frontend consistently, including navigation, page titles, tabs, mode buttons, forms, status text, empty states, and metadata labels.
+- The selected language must persist in `localStorage` for MVP. Do not add backend user preferences until explicitly requested.
+- Avoid mixed-language UI. If the selected language is Russian, display mode names and controls in Russian unless the word is a technical product/protocol term such as Git, WebDAV, URL, API, Markdown, or CodeMirror.
+- In Russian UI, use `хранилище` / `хранилища` for user-facing vault terminology. Keep technical identifiers such as `vault`, `slug`, endpoint paths, database fields, and code names unchanged unless a task explicitly changes the contract.
+
 ## Error Handling
 
 - Return or surface errors with useful context.
@@ -102,3 +125,6 @@ The project is new. Do not assume any previous architecture, service names, depl
 - For bug fixes, prefer tests that fail before the fix and pass after it when practical.
 - For integration-sensitive changes, validate the affected integration path using the repository's existing scripts or documented workflow.
 - Do not assume local test data, local containers, or generated artifacts represent production state.
+- The test Docker stack is started only from the `test/` directory with `docker compose up -d --build`.
+- Do not start the test stack with root-level `docker compose --env-file ... -f test/docker-compose.yml ...` commands.
+- The canonical local test stack URL is `http://127.0.0.1:18081`.
