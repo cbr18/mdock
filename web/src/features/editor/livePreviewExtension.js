@@ -1,4 +1,4 @@
-import { Prec, StateField } from '@codemirror/state';
+import { Prec, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, EditorView, keymap, WidgetType } from '@codemirror/view';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -6,17 +6,40 @@ import ReactMarkdown from 'react-markdown';
 import { markdownRehypePlugins, markdownRemarkPlugins, splitFrontmatter } from '../files/MarkdownPreview.jsx';
 
 export function livePreviewExtension({ frontmatterLabel = 'Frontmatter' } = {}) {
+  const setActiveBlock = StateEffect.define();
+
   const field = StateField.define({
     create(state) {
-      return buildDecorations(state, frontmatterLabel);
+      return buildStateValue(state, frontmatterLabel, null, setActiveBlock);
     },
-    update(decorations, transaction) {
-      if (!transaction.docChanged && !transaction.selection) {
-        return decorations.map(transaction.changes);
+    update(value, transaction) {
+      let activeBlock = value.activeBlock;
+      if (activeBlock && transaction.docChanged) {
+        activeBlock = {
+          from: transaction.changes.mapPos(activeBlock.from),
+          to: transaction.changes.mapPos(activeBlock.to)
+        };
       }
-      return buildDecorations(transaction.state, frontmatterLabel);
+
+      for (const effect of transaction.effects) {
+        if (effect.is(setActiveBlock)) {
+          activeBlock = effect.value;
+        }
+      }
+
+      if (activeBlock && transaction.selection && !selectionIntersectsBlock(transaction.state, activeBlock)) {
+        activeBlock = null;
+      }
+
+      if (!transaction.docChanged && !transaction.selection && transaction.effects.length === 0) {
+        return {
+          activeBlock,
+          decorations: value.decorations.map(transaction.changes)
+        };
+      }
+      return buildStateValue(transaction.state, frontmatterLabel, activeBlock, setActiveBlock);
     },
-    provide: (stateField) => EditorView.decorations.from(stateField)
+    provide: (stateField) => EditorView.decorations.from(stateField, (value) => value.decorations)
   });
 
   return [
@@ -60,21 +83,35 @@ function moveLogicalLine(direction) {
   };
 }
 
-function buildDecorations(state, frontmatterLabel) {
-  const ranges = [];
-  const activeRanges = state.selection.ranges.map((range) => ({
-    from: state.doc.lineAt(range.from).from,
-    to: state.doc.lineAt(range.to).to
-  }));
+function buildStateValue(state, frontmatterLabel, activeBlock, setActiveBlock) {
+  return {
+    activeBlock,
+    decorations: buildDecorations(state, frontmatterLabel, activeBlock, setActiveBlock)
+  };
+}
 
-  for (const block of splitBlocks(state.doc.toString())) {
-    if (isActiveBlock(block, activeRanges)) {
+function buildDecorations(state, frontmatterLabel, activeBlock, setActiveBlock) {
+  const ranges = [];
+  const blocks = splitBlocks(state.doc.toString());
+
+  if (!activeBlock) {
+    const widget = new RenderedMarkdownDocumentWidget(state.doc.toString(), blocks, frontmatterLabel, setActiveBlock);
+    if (state.doc.length === 0) {
+      ranges.push(Decoration.widget({ block: true, widget }).range(0));
+    } else {
+      ranges.push(Decoration.replace({ block: true, widget, inclusive: false }).range(0, state.doc.length));
+    }
+    return Decoration.set(ranges, true);
+  }
+
+  for (const block of blocks) {
+    if (isActiveBlock(block, activeBlock)) {
       ranges.push(Decoration.line({ class: 'cm-live-active-source-line' }).range(block.from));
       continue;
     }
     ranges.push(Decoration.replace({
       block: true,
-      widget: new RenderedMarkdownBlockWidget(block, frontmatterLabel),
+      widget: new RenderedMarkdownBlockWidget(block, frontmatterLabel, setActiveBlock),
       inclusive: false
     }).range(block.from, block.to));
   }
@@ -82,8 +119,16 @@ function buildDecorations(state, frontmatterLabel) {
   return Decoration.set(ranges, true);
 }
 
-function isActiveBlock(block, activeRanges) {
-  return activeRanges.some((range) => rangesIntersect(block.from, block.to, range.from, range.to));
+function isActiveBlock(block, activeBlock) {
+  return activeBlock && rangesIntersect(block.from, block.to, activeBlock.from, activeBlock.to);
+}
+
+function selectionIntersectsBlock(state, block) {
+  return state.selection.ranges.some((range) => {
+    const from = state.doc.lineAt(range.from).from;
+    const to = state.doc.lineAt(range.to).to;
+    return rangesIntersect(block.from, block.to, from, to);
+  });
 }
 
 function rangesIntersect(leftFrom, leftTo, rightFrom, rightTo) {
@@ -258,10 +303,11 @@ function isTableDelimiter(line) {
 }
 
 class RenderedMarkdownBlockWidget extends WidgetType {
-  constructor(block, frontmatterLabel) {
+  constructor(block, frontmatterLabel, setActiveBlock) {
     super();
     this.block = block;
     this.frontmatterLabel = frontmatterLabel;
+    this.setActiveBlock = setActiveBlock;
   }
 
   eq(other) {
@@ -275,7 +321,11 @@ class RenderedMarkdownBlockWidget extends WidgetType {
     container.className = `cm-live-rendered-block cm-live-rendered-${this.block.type}`;
     container.addEventListener('mousedown', (event) => {
       event.preventDefault();
-      view.dispatch({ selection: { anchor: this.block.from }, scrollIntoView: true });
+      view.dispatch({
+        selection: { anchor: this.block.from },
+        effects: this.setActiveBlock.of({ from: this.block.from, to: this.block.to }),
+        scrollIntoView: true
+      });
       view.focus();
     });
 
@@ -307,6 +357,77 @@ class RenderedMarkdownBlockWidget extends WidgetType {
         remarkPlugins: markdownRemarkPlugins,
         rehypePlugins: markdownRehypePlugins
       }, this.block.markdown)
+    );
+  }
+}
+
+class RenderedMarkdownDocumentWidget extends WidgetType {
+  constructor(content, blocks, frontmatterLabel, setActiveBlock) {
+    super();
+    this.content = content;
+    this.blocks = blocks;
+    this.frontmatterLabel = frontmatterLabel;
+    this.setActiveBlock = setActiveBlock;
+  }
+
+  eq(other) {
+    return other.content === this.content
+      && other.frontmatterLabel === this.frontmatterLabel;
+  }
+
+  toDOM(view) {
+    const container = document.createElement('div');
+    container.className = 'cm-live-rendered-block cm-live-full-document';
+    container.addEventListener('mousedown', (event) => {
+      const block = this.blockFromEventTarget(container, event.target);
+      if (!block) return;
+      event.preventDefault();
+      view.dispatch({
+        selection: { anchor: block.from },
+        effects: this.setActiveBlock.of({ from: block.from, to: block.to }),
+        scrollIntoView: true
+      });
+      view.focus();
+    });
+
+    const root = createRoot(container);
+    container.__mdockLiveRoot = root;
+    root.render(this.renderContent());
+    return container;
+  }
+
+  destroy(dom) {
+    dom.__mdockLiveRoot?.unmount();
+  }
+
+  ignoreEvent() {
+    return false;
+  }
+
+  blockFromEventTarget(container, target) {
+    const preview = container.querySelector('.markdown-preview');
+    if (!preview || !(target instanceof Element)) return this.blocks[0] ?? null;
+
+    const child = target.closest('.markdown-preview > *');
+    if (!child) return this.blocks[0] ?? null;
+
+    const index = Array.from(preview.children).indexOf(child);
+    return this.blocks[index] ?? null;
+  }
+
+  renderContent() {
+    const { frontmatter, body } = splitFrontmatter(this.content);
+    return React.createElement('article', { className: 'markdown-preview cm-live-rendered-preview' },
+      frontmatter
+        ? React.createElement('section', { className: 'markdown-frontmatter', 'aria-label': this.frontmatterLabel },
+          React.createElement('h4', null, this.frontmatterLabel),
+          React.createElement('pre', null, frontmatter)
+        )
+        : null,
+      React.createElement(ReactMarkdown, {
+        remarkPlugins: markdownRemarkPlugins,
+        rehypePlugins: markdownRehypePlugins
+      }, body)
     );
   }
 }

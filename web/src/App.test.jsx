@@ -265,7 +265,8 @@ test('renders vault file list and markdown preview', async () => {
   expect(document.querySelector('.cm-live-rendered-block hr')).toBeInTheDocument();
   expect(screen.queryByText('Live Preview editing ещё не реализован')).not.toBeInTheDocument();
   expect(screen.getAllByRole('button', { name: 'Сохранить' }).length).toBeGreaterThanOrEqual(1);
-  expect(screen.queryByText('tags: [test]')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Метаданные')).toBeInTheDocument();
+  expect(screen.getByText('tags: [test]')).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('tab', { name: 'Настройки хранилища' }));
   expect(await screen.findByRole('heading', { name: 'Хранилище' })).toBeInTheDocument();
