@@ -125,6 +125,7 @@ Plan: [21_08_2026_23_13_live_preview_height_keyboard.md](../plans/21_08_2026_23_
 - После удаления debug specs полный `npm test` проходил, но задача переоткрыта из-за визуального регресса по пользовательским скриншотам.
 - Commit: `1c659f4`.
 - Commit: `51fc3a2`.
+- Commit: `079b0c3`.
 - `npm test` — passed, 3 files / 22 tests.
 - `npm run build` — passed.
 - `go test ./...` — passed.
@@ -141,6 +142,7 @@ Plan: [21_08_2026_23_13_live_preview_height_keyboard.md](../plans/21_08_2026_23_
 - Playwright MCP стартовое состояние live edit: `activeLines=0`, `renderedBlocks=1`, `rawFrontmatterVisible=false`.
 - Playwright MCP клик по rendered paragraph: `activeLines=1`, `renderedBlocks=7`, `rawParagraphVisible=true`, `rawFrontmatterVisible=false`.
 - Доп. проверка размера Markdown: `--markdown-font-size=16px`; `tags: [e2e]` в `Просмотр` и live edit имеет `fontSize=16px`, `lineHeight=25.92px`; `sameFrontmatterFontSize=true`, `sameArticleFontSize=true`.
+- Доп. проверка active raw-блока: после клика по frontmatter `activeLines=3`, `visibleActiveLines=3`; строки `---`, `tags: [e2e]`, `---` имеют `height=28`, `fontSize=14px`, `lineHeight=28px`; верхняя/нижняя строки имеют rounded corners `8px`; editor chunk preload включён, полноразмерный fallback не остаётся в DOM после загрузки.
 
 ## Откат
 

@@ -6,7 +6,8 @@ import { createFileEditorSession } from '../editor/fileEditorSession.js';
 import { useLanguage } from '../i18n/LanguageProvider.jsx';
 import { MarkdownPreview } from './MarkdownPreview.jsx';
 
-const MarkdownEditor = lazy(() => import('../editor/MarkdownEditor.jsx').then((module) => ({ default: module.MarkdownEditor })));
+const loadMarkdownEditor = () => import('../editor/MarkdownEditor.jsx').then((module) => ({ default: module.MarkdownEditor }));
+const MarkdownEditor = lazy(loadMarkdownEditor);
 
 export function VaultFilesPanel({ slug }) {
   const { language, t } = useLanguage();
@@ -24,6 +25,12 @@ export function VaultFilesPanel({ slug }) {
   useEffect(() => () => {
     sessionRef.current?.close();
   }, []);
+
+  useEffect(() => {
+    if (selectedFile && isMarkdown(selectedFile.name)) {
+      loadMarkdownEditor();
+    }
+  }, [selectedFile]);
 
   useEffect(() => {
     if (content === savedContent) return undefined;
@@ -264,12 +271,12 @@ function DocumentView({ content, dirty, editing, lockStatus, mode, selectedFile,
     return <p className="muted empty-preview">{t('selectMarkdownFile')}</p>;
   }
   const editor = (
-    <Suspense fallback={<p className="muted empty-preview">{t('loading')}</p>}>
+    <Suspense fallback={<EditorLoadingFallback label={t('loading')} />}>
       <MarkdownEditor value={content} dirty={dirty} lockStatus={lockStatus} readOnly={!editing} saveDisabled={lockStatus !== 'locked'} onChange={onChange} onSave={onSave} />
     </Suspense>
   );
   const liveEditor = (
-    <Suspense fallback={<p className="muted empty-preview">{t('loading')}</p>}>
+    <Suspense fallback={<EditorLoadingFallback label={t('loading')} />}>
       <MarkdownEditor value={content} dirty={dirty} lockStatus={lockStatus} variant="live" saveDisabled={lockStatus !== 'locked'} onChange={onChange} onSave={onSave} />
     </Suspense>
   );
@@ -299,6 +306,14 @@ function DocumentView({ content, dirty, editing, lockStatus, mode, selectedFile,
     <div className="rendered-preview-view" aria-label={t('rendered')}>
       <MarkdownPreview content={content} />
     </div>
+  );
+}
+
+function EditorLoadingFallback({ label }) {
+  return (
+    <section className="markdown-editor-shell editor-loading-shell" aria-busy="true">
+      <p className="muted empty-preview">{label}</p>
+    </section>
   );
 }
 

@@ -989,6 +989,13 @@ legend {
   outline-offset: -2px;
 }
 
+.editor-loading-shell {
+  display: grid;
+  place-items: start;
+  min-height: 620px;
+  background: var(--bg-subtle);
+}
+
 .rendered-preview-view {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1043,13 +1050,30 @@ legend {
 
 .cm-live-preview .cm-line.cm-live-active-source-line {
   height: auto;
-  min-height: 24px;
+  min-height: 28px;
   overflow: visible;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  padding: 0 10px;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+  box-shadow: inset 1px 0 0 var(--border), inset -1px 0 0 var(--border);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  font-size: 13px;
-  line-height: 24px;
+  font-size: var(--markdown-code-font-size, 14px);
+  line-height: 28px;
+}
+
+.cm-live-preview .cm-line.cm-live-active-source-line-first {
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  box-shadow: inset 1px 0 0 var(--border), inset -1px 0 0 var(--border), inset 0 1px 0 var(--border);
+}
+
+.cm-live-preview .cm-line.cm-live-active-source-line-last {
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  box-shadow: inset 1px 0 0 var(--border), inset -1px 0 0 var(--border), inset 0 -1px 0 var(--border);
+}
+
+.cm-live-preview .cm-line.cm-live-active-source-line-first.cm-live-active-source-line-last {
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .cm-live-preview .cm-gutters {

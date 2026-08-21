@@ -106,7 +106,12 @@ function buildDecorations(state, frontmatterLabel, activeBlock, setActiveBlock) 
 
   for (const block of blocks) {
     if (isActiveBlock(block, activeBlock)) {
-      ranges.push(Decoration.line({ class: 'cm-live-active-source-line' }).range(block.from));
+      for (const lineDecoration of activeBlockLineDecorations(state, block)) {
+        ranges.push(lineDecoration);
+      }
+      if (block.sourceTo < block.to) {
+        ranges.push(Decoration.replace({ inclusive: false }).range(block.sourceTo, block.to));
+      }
       continue;
     }
     ranges.push(Decoration.replace({
@@ -117,6 +122,22 @@ function buildDecorations(state, frontmatterLabel, activeBlock, setActiveBlock) 
   }
 
   return Decoration.set(ranges, true);
+}
+
+function activeBlockLineDecorations(state, block) {
+  const decorations = [];
+  const startLine = state.doc.lineAt(block.from);
+  const endLine = state.doc.lineAt(Math.min(block.sourceTo, state.doc.length));
+
+  for (let lineNumber = startLine.number; lineNumber <= endLine.number; lineNumber += 1) {
+    const line = state.doc.line(lineNumber);
+    const classes = ['cm-live-active-source-line'];
+    if (lineNumber === startLine.number) classes.push('cm-live-active-source-line-first');
+    if (lineNumber === endLine.number) classes.push('cm-live-active-source-line-last');
+    decorations.push(Decoration.line({ class: classes.join(' ') }).range(line.from));
+  }
+
+  return decorations;
 }
 
 function isActiveBlock(block, activeBlock) {
@@ -231,7 +252,7 @@ function createBlock(type, lines, starts, startLine, endLine) {
   const from = starts[startLine];
   const to = starts[endLine] + lines[endLine].length;
   const markdown = lines.slice(startLine, endLine + 1).join('\n');
-  return { type, from, to, markdown };
+  return { type, from, to, sourceTo: to, markdown };
 }
 
 function absorbSeparators(blocks, contentLength) {
