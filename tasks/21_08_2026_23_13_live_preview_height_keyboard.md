@@ -144,6 +144,7 @@ Plan: [21_08_2026_23_13_live_preview_height_keyboard.md](../plans/21_08_2026_23_
 - Playwright MCP клик по rendered paragraph: `activeLines=1`, `renderedBlocks=7`, `rawParagraphVisible=true`, `rawFrontmatterVisible=false`.
 - Доп. проверка размера Markdown: `--markdown-font-size=16px`; `tags: [e2e]` в `Просмотр` и live edit имеет `fontSize=16px`, `lineHeight=25.92px`; `sameFrontmatterFontSize=true`, `sameArticleFontSize=true`.
 - Доп. проверка active raw-блока: после клика по frontmatter `activeLines=3`, `visibleActiveLines=3`; строки `---`, `tags: [e2e]`, `---` имеют `height=28`, `fontSize=14px`, `lineHeight=28px`; верхняя/нижняя строки имеют rounded corners `8px`; editor chunk preload включён, полноразмерный fallback не остаётся в DOM после загрузки.
+- Доп. проверка внешнего editor shell после новых скриншотов: live shell и `Просмотр` совпадают по `x/y/width/height` (`dx=0`, `dy=0`, `dw=0`, `dh=0`); live shell `radius=8px`, `overflow=hidden`; `.cm-editor` и `.cm-scroller` имеют `radius=8px`.
 
 ## Откат
 
