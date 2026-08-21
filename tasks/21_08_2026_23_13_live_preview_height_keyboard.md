@@ -126,6 +126,7 @@ Plan: [21_08_2026_23_13_live_preview_height_keyboard.md](../plans/21_08_2026_23_
 - Commit: `1c659f4`.
 - Commit: `51fc3a2`.
 - Commit: `079b0c3`.
+- Commit: `528f39b`.
 - `npm test` — passed, 3 files / 22 tests.
 - `npm run build` — passed.
 - `go test ./...` — passed.
