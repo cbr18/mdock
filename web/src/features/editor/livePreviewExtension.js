@@ -1,5 +1,5 @@
-import { StateField } from '@codemirror/state';
-import { Decoration, EditorView, WidgetType } from '@codemirror/view';
+import { Prec, StateField } from '@codemirror/state';
+import { Decoration, EditorView, keymap, WidgetType } from '@codemirror/view';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
@@ -21,10 +21,43 @@ export function livePreviewExtension({ frontmatterLabel = 'Frontmatter' } = {}) 
 
   return [
     field,
+    Prec.highest(keymap.of([
+      { key: 'ArrowUp', run: moveLogicalLine(-1) },
+      { key: 'ArrowDown', run: moveLogicalLine(1) }
+    ])),
+    Prec.highest(EditorView.domEventHandlers({
+      keydown(event, view) {
+        if ((event.key !== 'ArrowUp' && event.key !== 'ArrowDown') || event.altKey || event.ctrlKey || event.metaKey) {
+          return false;
+        }
+        const handled = moveLogicalLine(event.key === 'ArrowUp' ? -1 : 1)(view);
+        if (handled) {
+          event.preventDefault();
+        }
+        return handled;
+      }
+    })),
     EditorView.theme({
       '&.cm-live-preview': {}
     })
   ];
+}
+
+function moveLogicalLine(direction) {
+  return (view) => {
+    const selection = view.state.selection.main;
+    if (!selection.empty) return false;
+
+    const currentLine = view.state.doc.lineAt(selection.head);
+    const nextNumber = currentLine.number + direction;
+    if (nextNumber < 1 || nextNumber > view.state.doc.lines) return true;
+
+    const nextLine = view.state.doc.line(nextNumber);
+    const column = selection.head - currentLine.from;
+    const nextHead = nextLine.from + Math.min(column, nextLine.length);
+    view.dispatch({ selection: { anchor: nextHead }, scrollIntoView: true, userEvent: 'select' });
+    return true;
+  };
 }
 
 function buildDecorations(state, frontmatterLabel) {
@@ -54,7 +87,7 @@ function isActiveBlock(block, activeRanges) {
 }
 
 function rangesIntersect(leftFrom, leftTo, rightFrom, rightTo) {
-  return leftFrom <= rightTo && rightFrom <= leftTo;
+  return leftFrom < rightTo && rightFrom < leftTo;
 }
 
 function splitBlocks(content) {
@@ -146,7 +179,7 @@ function splitBlocks(content) {
     blocks.push(createBlock('paragraph', lines, starts, start, index - 1));
   }
 
-  return blocks;
+  return absorbSeparators(blocks, content.length);
 }
 
 function createBlock(type, lines, starts, startLine, endLine) {
@@ -154,6 +187,13 @@ function createBlock(type, lines, starts, startLine, endLine) {
   const to = starts[endLine] + lines[endLine].length;
   const markdown = lines.slice(startLine, endLine + 1).join('\n');
   return { type, from, to, markdown };
+}
+
+function absorbSeparators(blocks, contentLength) {
+  return blocks.map((block, index) => ({
+    ...block,
+    to: blocks[index + 1]?.from ?? contentLength
+  }));
 }
 
 function startsNewBlock(lines, index) {
@@ -214,7 +254,7 @@ function isTableRow(line) {
 }
 
 function isTableDelimiter(line) {
-  return /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+  return /^\s*\|?\s*:?-{1,}:?\s*(?:\|\s*:?-{1,}:?\s*)+\|?\s*$/.test(line);
 }
 
 class RenderedMarkdownBlockWidget extends WidgetType {
