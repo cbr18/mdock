@@ -76,7 +76,7 @@ Plan: [21_08_2026_23_13_live_preview_height_keyboard.md](../plans/21_08_2026_23_
 - `docker ps` — only `mdock:test` is running on `http://127.0.0.1:18081`.
 - Playwright MCP manual check — passed: baseline source line height is 24px, table is recognized as rendered table, rendered block gaps are reduced to the live preview baseline, `ArrowDown` moves from heading to next Markdown block, `ArrowUp` returns to heading instead of document start.
 - Full `npm test` was not used as final validation because unrelated untracked Playwright debug specs in `web/` are currently picked up by Vitest and fail outside this task.
-- Commit: pending.
+- Commit: `1c659f4`.
 
 ## Откат
 
