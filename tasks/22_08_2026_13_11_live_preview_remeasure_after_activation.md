@@ -4,6 +4,8 @@ Status: DONE
 Created: 2026-08-22 13:11
 Project: mdock
 Plan: [22_08_2026_13_11_live_preview_remeasure_after_activation.md](../plans/22_08_2026_13_11_live_preview_remeasure_after_activation.md)
+Commits:
+- `54b21c5` — `fix: place live preview cursor from DOM caret`
 
 ## Проблема
 
