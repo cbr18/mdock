@@ -513,6 +513,14 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 		t.Fatalf("webdav put status = %d body=%s", put.Code, put.Body.String())
 	}
 
+	mkcolTrailingSlash := httptest.NewRecorder()
+	req = httptest.NewRequest("MKCOL", "/webdav/work-notes/Obsidian%20Vault/", nil)
+	req.SetBasicAuth("alice", "secret")
+	srv.Handler().ServeHTTP(mkcolTrailingSlash, req)
+	if mkcolTrailingSlash.Code != http.StatusCreated {
+		t.Fatalf("webdav mkcol trailing slash status = %d body=%s", mkcolTrailingSlash.Code, mkcolTrailingSlash.Body.String())
+	}
+
 	get := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/webdav/work-notes/notes/today.md", nil)
 	req.SetBasicAuth("alice", "secret")

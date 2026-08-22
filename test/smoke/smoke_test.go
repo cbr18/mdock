@@ -237,7 +237,7 @@ func TestRemotelySaveWebDAVCompatibility(t *testing.T) {
 	requireWebDAV(t, client, "PROPFIND", webdavBase+"/", username, password, nil, http.StatusMultiStatus, "multistatus")
 
 	remoteBaseDir := "Obsidian%20Vault"
-	requireWebDAV(t, client, "MKCOL", webdavBase+"/"+remoteBaseDir, username, password, nil, http.StatusCreated, "")
+	requireWebDAV(t, client, "MKCOL", webdavBase+"/"+remoteBaseDir+"/", username, password, nil, http.StatusCreated, "")
 	requireWebDAV(t, client, "PROPFIND", webdavBase+"/"+remoteBaseDir+"/", username, password, nil, http.StatusMultiStatus, "multistatus")
 
 	testDir := remoteBaseDir + "/rs-test-folder-" + suffix

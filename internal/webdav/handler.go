@@ -476,6 +476,10 @@ func parsePath(input string) (string, string, error) {
 		if err != nil {
 			return "", "", err
 		}
+		rel = path.Clean(rel)
+		if rel == "" {
+			rel = "."
+		}
 	}
 	return slug, rel, nil
 }
