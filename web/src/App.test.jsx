@@ -209,6 +209,13 @@ test('renders vault file list and markdown preview', async () => {
         entries: rootEntries
       });
     }
+    if (url === '/api/vaults/work-notes/files?path=folder') {
+      return response({
+        entries: [
+          { name: 'child.md', path: 'folder/child.md', is_dir: false, size: 8, mod_time: '2026-08-15T10:30:00Z' }
+        ]
+      });
+    }
     if (url === '/api/vaults/work-notes/files' && options.method === 'POST') {
       const body = JSON.parse(options.body);
       rootEntries = [...rootEntries, { name: body.path.split('/').pop(), path: body.path, is_dir: false, size: 0, mod_time: '2026-08-15T11:00:00Z' }];
@@ -225,6 +232,9 @@ test('renders vault file list and markdown preview', async () => {
     }
     if (url === '/api/vaults/work-notes/files/content?path=note.md') {
       return response({ content: '---\ntags: [test]\n---\n# Note\n\n**bold** [site](https://example.test) [[Page|Alias]]\n\n- [x] done\n- item\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n---' });
+    }
+    if (url === '/api/vaults/work-notes/files/content?path=folder%2Fchild.md') {
+      return response({ content: '# Child' });
     }
     if (url === '/api/vaults/work-notes/locks') {
       return response({ lock: { path: 'note.md', source: 'web' } });
@@ -252,6 +262,14 @@ test('renders vault file list and markdown preview', async () => {
   expect(screen.queryByLabelText('Markdown-редактор')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
   expect(fetchMock).not.toHaveBeenCalledWith('/api/vaults/work-notes/locks', expect.anything());
+
+  fireEvent.click(screen.getByRole('button', { name: 'Раскрыть папку: folder' }));
+  expect(await screen.findByRole('button', { name: 'child.md' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'child.md' }));
+  expect(await screen.findByRole('heading', { name: 'Child' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Выше' }));
+  fireEvent.click(screen.getByRole('button', { name: 'note.md' }));
+  expect(await screen.findByRole('heading', { name: 'Note' })).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'Скрыть файлы' }));
   expect(screen.getByRole('button', { name: 'Показать файлы' })).toBeInTheDocument();

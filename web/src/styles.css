@@ -811,7 +811,7 @@ legend {
   font-size: 13px;
 }
 
-.file-pathbar span:last-child {
+.file-pathbar-current {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -829,11 +829,12 @@ legend {
 
 .file-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
   gap: 4px;
   width: 100%;
   min-height: 44px;
+  padding-left: calc(var(--tree-level, 0) * 18px);
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-soft);
@@ -843,6 +844,46 @@ legend {
 .file-row.active {
   background: var(--surface-hover);
   color: var(--text);
+}
+
+.file-tree-node {
+  display: grid;
+  gap: 2px;
+}
+
+.file-tree-children {
+  display: grid;
+  gap: 2px;
+}
+
+.file-tree-loading {
+  margin: 4px 0 4px calc((var(--tree-level, 0) + 1) * 18px + 34px);
+  font-size: 12px;
+}
+
+.file-disclosure-button {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.file-disclosure-button:disabled {
+  opacity: 0;
+}
+
+.file-disclosure-button:not(:disabled):hover {
+  background: transparent;
+  color: var(--text);
+}
+
+.file-disclosure-spacer {
+  width: 22px;
+  height: 32px;
 }
 
 .file-row-open {

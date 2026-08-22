@@ -1,4 +1,4 @@
-import { ChevronLeft, Code2, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, PanelLeftClose, PanelLeftOpen, Rows2, Save, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Code2, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, PanelLeftClose, PanelLeftOpen, Rows2, Save, Trash2 } from 'lucide-react';
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { createDirectory, createFile, deletePath, listFiles, readFileContent } from '../../api/files.js';
 import { StatusMessage } from '../../components/ui/StatusMessage.jsx';
@@ -12,7 +12,9 @@ const MarkdownEditor = lazy(loadMarkdownEditor);
 export function VaultFilesPanel({ slug }) {
   const { language, t } = useLanguage();
   const [path, setPath] = useState('.');
-  const [entries, setEntries] = useState([]);
+  const [treeEntries, setTreeEntries] = useState({});
+  const [expandedPaths, setExpandedPaths] = useState(() => new Set(['.']));
+  const [loadingPaths, setLoadingPaths] = useState(() => new Set());
   const [selectedFile, setSelectedFile] = useState(null);
   const [content, setContent] = useState('');
   const [savedContent, setSavedContent] = useState('');
@@ -47,10 +49,33 @@ export function VaultFilesPanel({ slug }) {
   useEffect(() => {
     let active = true;
     setMessage('');
-    listFiles(slug, path)
+    const restoredExpanded = readExpandedPaths(slug);
+    setPath('.');
+    setExpandedPaths(restoredExpanded);
+    setTreeEntries({});
+    listFiles(slug, '.')
       .then((payload) => {
         if (!active) return;
-        setEntries(sortEntries(payload.entries || [], language));
+        setTreeEntries({ '.': sortEntries(payload.entries || [], language) });
+        const childPaths = [...restoredExpanded].filter((entryPath) => entryPath !== '.');
+        return Promise.all(childPaths.map(async (entryPath) => {
+          try {
+            const childPayload = await listFiles(slug, entryPath);
+            return [entryPath, sortEntries(childPayload.entries || [], language)];
+          } catch {
+            return [entryPath, null];
+          }
+        }));
+      })
+      .then((loadedChildren) => {
+        if (!active || !loadedChildren?.length) return;
+        setTreeEntries((current) => {
+          const next = { ...current };
+          for (const [entryPath, childEntries] of loadedChildren) {
+            if (childEntries) next[entryPath] = childEntries;
+          }
+          return next;
+        });
       })
       .catch(() => {
         if (!active) return;
@@ -59,11 +84,28 @@ export function VaultFilesPanel({ slug }) {
     return () => {
       active = false;
     };
-  }, [slug, path, t, language]);
+  }, [slug, t, language]);
 
-  async function loadEntries() {
-    const payload = await listFiles(slug, path);
-    setEntries(sortEntries(payload.entries || [], language));
+  useEffect(() => {
+    writeExpandedPaths(slug, expandedPaths);
+  }, [slug, expandedPaths]);
+
+  async function loadDirectory(directoryPath, { force = false } = {}) {
+    if (!force && treeEntries[directoryPath]) return;
+    setLoadingPaths((current) => new Set(current).add(directoryPath));
+    try {
+      const payload = await listFiles(slug, directoryPath);
+      setTreeEntries((current) => ({
+        ...current,
+        [directoryPath]: sortEntries(payload.entries || [], language)
+      }));
+    } finally {
+      setLoadingPaths((current) => {
+        const next = new Set(current);
+        next.delete(directoryPath);
+        return next;
+      });
+    }
   }
 
   useEffect(() => {
@@ -194,11 +236,11 @@ export function VaultFilesPanel({ slug }) {
     try {
       const nextPath = joinPath(basePath, name);
       await createFile(slug, nextPath, '');
-      if (basePath !== path) {
-        setPath(basePath);
-      } else {
-        await loadEntries();
+      setPath(basePath || '.');
+      if (basePath && basePath !== '.') {
+        setExpandedPaths((current) => new Set(current).add(basePath));
       }
+      await loadDirectory(basePath || '.', { force: true });
       setMessage(t('fileCreated'));
     } catch {
       setMessage(t('fileCreateFailed'));
@@ -210,11 +252,11 @@ export function VaultFilesPanel({ slug }) {
     if (!name) return;
     try {
       await createDirectory(slug, joinPath(basePath, name));
-      if (basePath !== path) {
-        setPath(basePath);
-      } else {
-        await loadEntries();
+      setPath(basePath || '.');
+      if (basePath && basePath !== '.') {
+        setExpandedPaths((current) => new Set(current).add(basePath));
       }
+      await loadDirectory(basePath || '.', { force: true });
       setMessage(t('folderCreated'));
     } catch {
       setMessage(t('folderCreateFailed'));
@@ -233,11 +275,110 @@ export function VaultFilesPanel({ slug }) {
         setSavedContent('');
         setEditing(false);
       }
-      await loadEntries();
+      const parentDirectory = parentPathFor(entry.path);
+      setTreeEntries((current) => {
+        const next = { ...current };
+        delete next[entry.path];
+        for (const entryPath of Object.keys(next)) {
+          if (entryPath.startsWith(`${entry.path}/`)) {
+            delete next[entryPath];
+          }
+        }
+        return next;
+      });
+      setExpandedPaths((current) => {
+        const next = new Set();
+        for (const entryPath of current) {
+          if (entryPath !== entry.path && !entryPath.startsWith(`${entry.path}/`)) {
+            next.add(entryPath);
+          }
+        }
+        return next;
+      });
+      await loadDirectory(parentDirectory, { force: true });
       setMessage(entry.is_dir ? t('folderDeleted') : t('fileDeleted'));
     } catch {
       setMessage(t('deleteFailed'));
     }
+  }
+
+  async function toggleDirectory(entry) {
+    setPath(entry.path);
+    if (expandedPaths.has(entry.path)) {
+      setExpandedPaths((current) => {
+        const next = new Set(current);
+        next.delete(entry.path);
+        return next;
+      });
+      return;
+    }
+    setExpandedPaths((current) => new Set(current).add(entry.path));
+    try {
+      await loadDirectory(entry.path);
+    } catch {
+      setMessage(t('fileLoadFailed'));
+    }
+  }
+
+  function renderTreeEntries(directoryPath, level = 0) {
+    const entries = treeEntries[directoryPath] || [];
+    if (!entries.length && directoryPath === '.') {
+      return <p className="muted">{t('noFiles')}</p>;
+    }
+    return entries.map((entry) => {
+      const expanded = expandedPaths.has(entry.path);
+      const loading = loadingPaths.has(entry.path);
+      const childrenLoaded = Boolean(treeEntries[entry.path]);
+      const children = treeEntries[entry.path] || [];
+      return (
+        <div key={entry.path} className="file-tree-node">
+          <div className={`file-row ${selectedFile?.path === entry.path ? 'active' : ''}`} style={{ '--tree-level': level }}>
+            {entry.is_dir ? (
+              <button
+                type="button"
+                className="file-disclosure-button"
+                onClick={() => toggleDirectory(entry)}
+                aria-label={expanded ? `${t('collapseFolder')}: ${entry.name}` : `${t('expandFolder')}: ${entry.name}`}
+                title={entry.name}
+              >
+                {expanded ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
+              </button>
+            ) : <span className="file-disclosure-spacer" aria-hidden="true" />}
+            <button type="button" className="file-row-open" aria-label={entry.name} onClick={() => entry.is_dir ? toggleDirectory(entry) : openFile(entry)}>
+              {entry.is_dir ? (expanded ? <FolderOpen size={18} aria-hidden="true" /> : <Folder size={18} aria-hidden="true" />) : <FileText size={18} aria-hidden="true" />}
+              <span className="file-row-main">
+                <strong>{entry.name}</strong>
+                <small>{entry.is_dir ? (loading ? t('loading') : t('folder')) : `${formatBytes(entry.size, language)} · ${formatDate(entry.mod_time, language)}`}</small>
+              </span>
+            </button>
+            <span className="file-row-actions">
+              {entry.is_dir ? (
+                <>
+                  <button type="button" className="icon-button" onClick={() => handleCreateFile(entry.path)} title={t('createFileInFolder')}>
+                    <FilePlus2 size={15} aria-hidden="true" />
+                    <span className="sr-only">{t('createFileInFolder')}</span>
+                  </button>
+                  <button type="button" className="icon-button" onClick={() => handleCreateDirectory(entry.path)} title={t('createFolderInFolder')}>
+                    <FolderPlus size={15} aria-hidden="true" />
+                    <span className="sr-only">{t('createFolderInFolder')}</span>
+                  </button>
+                </>
+              ) : null}
+              <button type="button" className="icon-button danger-icon-button" onClick={() => handleDeleteEntry(entry)} title={`${entry.is_dir ? t('deleteFolder') : t('deleteFile')}: ${entry.name}`}>
+                <Trash2 size={15} aria-hidden="true" />
+                <span className="sr-only">{entry.is_dir ? t('deleteFolder') : t('deleteFile')}: {entry.name}</span>
+              </button>
+            </span>
+          </div>
+          {entry.is_dir && expanded ? (
+            <div className="file-tree-children">
+              {loading && !childrenLoaded ? <p className="muted file-tree-loading">{t('loading')}</p> : renderTreeEntries(entry.path, level + 1)}
+              {!loading && childrenLoaded && !children.length ? <p className="muted file-tree-loading">{t('noFiles')}</p> : null}
+            </div>
+          ) : null}
+        </div>
+      );
+    });
   }
 
   return (
@@ -284,7 +425,7 @@ export function VaultFilesPanel({ slug }) {
               <ChevronLeft size={16} aria-hidden="true" />
               <span className="sr-only">{t('parentFolder')}</span>
             </button>
-            <span>{path === '.' ? '/' : path}</span>
+            <span className="file-pathbar-current">{path === '.' ? '/' : path}</span>
             <button type="button" className="icon-button" onClick={() => handleCreateFile(path)} title={t('createFile')}>
               <FilePlus2 size={16} aria-hidden="true" />
               <span className="sr-only">{t('createFile')}</span>
@@ -295,35 +436,7 @@ export function VaultFilesPanel({ slug }) {
             </button>
           </div>
           <div className="file-list">
-            {entries.length ? entries.map((entry) => (
-              <div key={entry.path} className={`file-row ${selectedFile?.path === entry.path ? 'active' : ''}`}>
-                <button type="button" className="file-row-open" aria-label={entry.name} onClick={() => entry.is_dir ? setPath(entry.path) : openFile(entry)}>
-                  {entry.is_dir ? <Folder size={18} aria-hidden="true" /> : <FileText size={18} aria-hidden="true" />}
-                  <span className="file-row-main">
-                    <strong>{entry.name}</strong>
-                    <small>{entry.is_dir ? t('folder') : `${formatBytes(entry.size, language)} · ${formatDate(entry.mod_time, language)}`}</small>
-                  </span>
-                </button>
-                <span className="file-row-actions">
-                  {entry.is_dir ? (
-                    <>
-                      <button type="button" className="icon-button" onClick={() => handleCreateFile(entry.path)} title={t('createFileInFolder')}>
-                        <FilePlus2 size={15} aria-hidden="true" />
-                        <span className="sr-only">{t('createFileInFolder')}</span>
-                      </button>
-                      <button type="button" className="icon-button" onClick={() => handleCreateDirectory(entry.path)} title={t('createFolderInFolder')}>
-                        <FolderPlus size={15} aria-hidden="true" />
-                        <span className="sr-only">{t('createFolderInFolder')}</span>
-                      </button>
-                    </>
-                  ) : null}
-                  <button type="button" className="icon-button danger-icon-button" onClick={() => handleDeleteEntry(entry)} title={`${entry.is_dir ? t('deleteFolder') : t('deleteFile')}: ${entry.name}`}>
-                    <Trash2 size={15} aria-hidden="true" />
-                    <span className="sr-only">{entry.is_dir ? t('deleteFolder') : t('deleteFile')}: {entry.name}</span>
-                  </button>
-                </span>
-              </div>
-            )) : <p className="muted">{t('noFiles')}</p>}
+            {renderTreeEntries('.')}
           </div>
         </section>
         <section className="file-preview-pane" aria-label={t('preview')}>
@@ -425,6 +538,35 @@ function ensureMarkdownExtension(name) {
 function joinPath(basePath, name) {
   if (!basePath || basePath === '.') return name;
   return `${basePath.replace(/\/+$/, '')}/${name.replace(/^\/+/, '')}`;
+}
+
+function parentPathFor(entryPath) {
+  const parts = entryPath.split('/').filter(Boolean);
+  parts.pop();
+  return parts.length ? parts.join('/') : '.';
+}
+
+function readExpandedPaths(slug) {
+  try {
+    const raw = window.localStorage.getItem(expandedPathsStorageKey(slug));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return new Set(['.', ...parsed.filter((entryPath) => typeof entryPath === 'string' && entryPath)]);
+  } catch {
+    return new Set(['.']);
+  }
+}
+
+function writeExpandedPaths(slug, expandedPaths) {
+  try {
+    const paths = [...expandedPaths].filter((entryPath) => entryPath !== '.');
+    window.localStorage.setItem(expandedPathsStorageKey(slug), JSON.stringify(paths));
+  } catch {
+    // localStorage can be unavailable in private contexts; tree state is still usable in memory.
+  }
+}
+
+function expandedPathsStorageKey(slug) {
+  return `mdock:${slug}:expanded-file-tree`;
 }
 
 function formatBytes(size, language) {
