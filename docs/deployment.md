@@ -78,6 +78,9 @@ Test pipeline и pre-deploy CI:
 - `npm ci`
 - `npm test`
 - `npm run build`
+
+Docker/Compose smoke проверки не входят в Forgejo test job, потому что текущий runner не имеет Docker CLI. До появления Docker-capable runner эти проверки запускаются локально или вручную:
+
 - `docker compose config`
 - `docker compose --env-file .env.test.example config` из папки `test/`
 - `docker compose up -d --build` из папки `test/`

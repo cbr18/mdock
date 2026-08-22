@@ -50,25 +50,6 @@ jobs:
       - name: Build backend
         run: go build -mod=vendor -buildvcs=false ./cmd/mdock
 
-      - name: Validate production compose
-        run: docker compose config
-
-      - name: Validate test compose
-        run: docker compose --env-file .env.test.example config
-        working-directory: test
-
-      - name: Start test stack
-        run: docker compose up -d --build
-        working-directory: test
-
-      - name: Run smoke tests
-        run: ./test/run-smoke.sh
-
-      - name: Stop test stack
-        if: always()
-        run: docker compose down -v
-        working-directory: test
-
   deploy:
     needs: test
     runs-on: ubuntu-latest
