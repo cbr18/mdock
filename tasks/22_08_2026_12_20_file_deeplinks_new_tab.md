@@ -4,6 +4,8 @@ Status: DONE
 Created: 2026-08-22 12:20
 Project: mdock
 Plan: [22_08_2026_12_20_file_deeplinks_new_tab.md](../plans/22_08_2026_12_20_file_deeplinks_new_tab.md)
+Commits:
+- `574e6a8` — `feat: add file deep links`
 
 ## Проблема
 
