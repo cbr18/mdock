@@ -265,11 +265,14 @@ test('renders vault file list and markdown preview', async () => {
 
   await screen.findByRole('heading', { name: 'Хранилища' });
   fireEvent.click(screen.getByRole('button', { name: /Work Notes/ }));
-  expect(await screen.findByRole('button', { name: 'note.md' })).toBeInTheDocument();
+  const noteLink = await screen.findByRole('link', { name: 'note.md' });
+  expect(noteLink).toBeInTheDocument();
+  expect(noteLink).toHaveAttribute('href', expect.stringContaining('file=note.md'));
 
-  fireEvent.click(screen.getByRole('button', { name: 'note.md' }));
+  fireEvent.click(noteLink);
 
   expect(await screen.findByRole('heading', { name: 'Note' })).toBeInTheDocument();
+  expect(window.location.search).toContain('file=note.md');
   expect(screen.getByText('tags: [test]')).toBeInTheDocument();
   expect(screen.getByRole('checkbox', { checked: true })).toBeChecked();
   expect(screen.getByLabelText('Редактирование')).not.toBeChecked();
@@ -278,11 +281,11 @@ test('renders vault file list and markdown preview', async () => {
   expect(fetchMock).not.toHaveBeenCalledWith('/api/vaults/work-notes/locks', expect.anything());
 
   fireEvent.click(screen.getByRole('button', { name: 'Раскрыть папку: folder' }));
-  expect(await screen.findByRole('button', { name: 'child.md' })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'child.md' }));
+  expect(await screen.findByRole('link', { name: 'child.md' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('link', { name: 'child.md' }));
   expect(await screen.findByRole('heading', { name: 'Child' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Выше' }));
-  fireEvent.click(screen.getByRole('button', { name: 'note.md' }));
+  fireEvent.click(screen.getByRole('link', { name: 'note.md' }));
   expect(await screen.findByRole('heading', { name: 'Note' })).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'Скрыть файлы' }));
@@ -291,7 +294,7 @@ test('renders vault file list and markdown preview', async () => {
   expect(screen.getByRole('button', { name: 'Скрыть файлы' })).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'Создать файл' }));
-  expect(await screen.findByRole('button', { name: 'draft.md' })).toBeInTheDocument();
+  expect(await screen.findByRole('link', { name: 'draft.md' })).toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledWith('/api/vaults/work-notes/files', expect.objectContaining({
     method: 'POST',
     body: JSON.stringify({ path: 'draft.md', content: '' })
@@ -308,7 +311,7 @@ test('renders vault file list and markdown preview', async () => {
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/vaults/work-notes/files?path=draft.md', expect.objectContaining({ method: 'DELETE' })));
 
   fireEvent.click(screen.getByRole('button', { name: 'Создать файл' }));
-  expect(await screen.findByRole('button', { name: 'move-me.md' })).toBeInTheDocument();
+  expect(await screen.findByRole('link', { name: 'move-me.md' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Переместить: move-me.md' }));
   expect(screen.getByText('Перемещаем: move-me.md')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Переместить сюда: docs' }));
@@ -317,7 +320,7 @@ test('renders vault file list and markdown preview', async () => {
     body: JSON.stringify({ from_path: 'move-me.md', to_path: 'docs/move-me.md' })
   })));
   expect(await screen.findByRole('button', { name: 'Свернуть папку: docs' })).toBeInTheDocument();
-  expect(await screen.findByRole('button', { name: 'move-me.md' })).toBeInTheDocument();
+  expect(await screen.findByRole('link', { name: 'move-me.md' })).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('tab', { name: 'Исходник' }));
   expect((await screen.findAllByLabelText('Markdown-редактор')).length).toBeGreaterThanOrEqual(1);
@@ -357,6 +360,65 @@ test('renders vault file list and markdown preview', async () => {
   expect(await screen.findByRole('heading', { name: 'Хранилище' })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Статус Git' })).toBeInTheDocument();
   expect(window.location.search).toContain('section=settings');
+});
+
+test('opens vault file from deep link', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  window.history.replaceState(null, '', '/?page=vault&slug=work-notes&section=editor&file=folder%2Fchild.md&view=rendered');
+  const fetchMock = vi.fn(async (url) => {
+    if (url === '/api/auth/me') {
+      return response({ username: 'admin', is_admin: true });
+    }
+    if (url === '/api/vaults') {
+      return response({ vaults: [{ id: 1, slug: 'work-notes', name: 'Work Notes', kind: 'shared', role: 'owner' }] });
+    }
+    if (url === '/api/vaults?archived=only') {
+      return response({ vaults: [] });
+    }
+    if (url === '/api/vaults/work-notes') {
+      return response({ vault: { id: 1, slug: 'work-notes', name: 'Work Notes', path: 'vault-1', kind: 'shared', role: 'owner', archived: false } });
+    }
+    if (url === '/api/vaults/work-notes/members') {
+      return response({ members: [] });
+    }
+    if (url === '/api/vaults/work-notes/git/status') {
+      return response({ dirty: false, queue_len: 0 });
+    }
+    if (url === '/api/vaults/work-notes/git/commits?limit=20') {
+      return response({ commits: [] });
+    }
+    if (url === '/api/vaults/work-notes/git/remote') {
+      return response({ remote_url: '', last_push_at: '', last_push_error: '' });
+    }
+    if (url === '/api/vaults/work-notes/webdav') {
+      return response({ webdav: { url: 'http://localhost:3000/webdav/work-notes/' } });
+    }
+    if (url === '/api/vaults/work-notes/files?path=.') {
+      return response({
+        entries: [
+          { name: 'folder', path: 'folder', is_dir: true, size: 0, mod_time: '2026-08-15T10:00:00Z' }
+        ]
+      });
+    }
+    if (url === '/api/vaults/work-notes/files?path=folder') {
+      return response({
+        entries: [
+          { name: 'child.md', path: 'folder/child.md', is_dir: false, size: 8, mod_time: '2026-08-15T10:30:00Z' }
+        ]
+      });
+    }
+    if (url === '/api/vaults/work-notes/files/content?path=folder%2Fchild.md') {
+      return response({ content: '# Child' });
+    }
+    return response({}, 404);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  render(<App />);
+
+  expect(await screen.findByRole('heading', { name: 'Child' })).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'Свернуть папку: folder' })).toBeInTheDocument();
+  expect(await screen.findByRole('link', { name: 'child.md' })).toHaveAttribute('href', expect.stringContaining('file=folder%2Fchild.md'));
 });
 
 test('does not load files for archived vault page', async () => {

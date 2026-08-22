@@ -54,6 +54,11 @@ export function VaultFilesPanel({ slug }) {
     setMessage('');
     const restoredExpanded = readExpandedPaths(slug);
     setPath('.');
+    setSelectedFile(null);
+    setContent('');
+    setSavedContent('');
+    setEditing(false);
+    closeEditorSession();
     setExpandedPaths(restoredExpanded);
     setTreeEntries({});
     listFiles(slug, '.')
@@ -79,6 +84,11 @@ export function VaultFilesPanel({ slug }) {
           }
           return next;
         });
+      })
+      .then(async () => {
+        const filePath = filePathFromLocation();
+        if (!active || !filePath) return;
+        await openFilePath(filePath, { syncURL: false });
       })
       .catch(() => {
         if (!active) return;
@@ -114,6 +124,16 @@ export function VaultFilesPanel({ slug }) {
   useEffect(() => {
     function handlePopState() {
       setViewMode(viewModeFromLocation());
+      const filePath = filePathFromLocation();
+      if (!filePath) {
+        closeEditorSession();
+        setSelectedFile(null);
+        setContent('');
+        setSavedContent('');
+        setEditing(false);
+        return;
+      }
+      openFilePath(filePath, { syncURL: false });
     }
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -126,9 +146,15 @@ export function VaultFilesPanel({ slug }) {
     setLockStatus('idle');
   }
 
-  async function openFile(entry) {
+  async function openFile(entry, { syncURL = true } = {}) {
+    if (selectedFile?.path !== entry.path && content !== savedContent && !window.confirm(t('confirmDiscardEdits'))) {
+      return;
+    }
     await closeEditorSession();
     setEditing(false);
+    if (syncURL) {
+      updateSearchParams({ file: entry.path, section: 'editor' });
+    }
     if (!isMarkdown(entry.name)) {
       setSelectedFile(entry);
       setContent('');
@@ -147,6 +173,43 @@ export function VaultFilesPanel({ slug }) {
       setSavedContent('');
       setMessage(t('fileLoadFailed'));
     }
+  }
+
+  async function openFilePath(filePath, { syncURL = true } = {}) {
+    const normalizedPath = normalizeFilePath(filePath);
+    if (!normalizedPath) return;
+    const parentDirectories = parentDirectoriesFor(normalizedPath);
+    const expandedParents = parentDirectories.filter((entryPath) => entryPath !== '.');
+    if (expandedParents.length) {
+      setExpandedPaths((current) => new Set([...current, ...expandedParents]));
+    }
+
+    let finalEntries = [];
+    for (const directoryPath of parentDirectories) {
+      try {
+        const payload = await listFiles(slug, directoryPath);
+        const entries = sortEntries(payload.entries || [], language);
+        setTreeEntries((current) => ({ ...current, [directoryPath]: entries }));
+        finalEntries = entries;
+      } catch {
+        setMessage(t('fileLoadFailed'));
+        return;
+      }
+    }
+
+    const entryName = normalizedPath.split('/').pop();
+    const entry = finalEntries.find((item) => !item.is_dir && item.name === entryName && item.path === normalizedPath);
+    if (!entry) {
+      setMessage(t('fileLoadFailed'));
+      return;
+    }
+    await openFile(entry, { syncURL });
+  }
+
+  function handleFileLinkClick(event, entry) {
+    if (shouldUseNativeNavigation(event)) return;
+    event.preventDefault();
+    openFile(entry);
   }
 
   async function enableEditing() {
@@ -228,7 +291,7 @@ export function VaultFilesPanel({ slug }) {
 
   function handleViewMode(nextMode) {
     setViewMode(nextMode);
-    updateSearchParam('view', nextMode);
+    updateSearchParams({ view: nextMode });
   }
 
   async function handleCreateFile(basePath = path) {
@@ -277,6 +340,7 @@ export function VaultFilesPanel({ slug }) {
         setContent('');
         setSavedContent('');
         setEditing(false);
+        updateSearchParams({ file: null });
       }
       const parentDirectory = parentPathFor(entry.path);
       setTreeEntries((current) => {
@@ -347,6 +411,7 @@ export function VaultFilesPanel({ slug }) {
           await closeEditorSession();
           setEditing(false);
         }
+        updateSearchParams({ file: nextSelectedPath });
       }
       setPath(targetDirectory || '.');
       if (targetDirectory && targetDirectory !== '.') {
@@ -468,13 +533,23 @@ export function VaultFilesPanel({ slug }) {
                 {expanded ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
               </button>
             ) : <span className="file-disclosure-spacer" aria-hidden="true" />}
-            <button type="button" className="file-row-open" aria-label={entry.name} onClick={() => entry.is_dir ? toggleDirectory(entry) : openFile(entry)}>
-              {entry.is_dir ? (expanded ? <FolderOpen size={18} aria-hidden="true" /> : <Folder size={18} aria-hidden="true" />) : <FileText size={18} aria-hidden="true" />}
-              <span className="file-row-main">
-                <strong>{entry.name}</strong>
-                <small>{entry.is_dir ? (loading ? t('loading') : t('folder')) : `${formatBytes(entry.size, language)} · ${formatDate(entry.mod_time, language)}`}</small>
-              </span>
-            </button>
+            {entry.is_dir ? (
+              <button type="button" className="file-row-open" aria-label={entry.name} onClick={() => toggleDirectory(entry)}>
+                {expanded ? <FolderOpen size={18} aria-hidden="true" /> : <Folder size={18} aria-hidden="true" />}
+                <span className="file-row-main">
+                  <strong>{entry.name}</strong>
+                  <small>{loading ? t('loading') : t('folder')}</small>
+                </span>
+              </button>
+            ) : (
+              <a className="file-row-open" href={fileHref(slug, entry.path, viewMode)} aria-label={entry.name} onClick={(event) => handleFileLinkClick(event, entry)}>
+                <FileText size={18} aria-hidden="true" />
+                <span className="file-row-main">
+                  <strong>{entry.name}</strong>
+                  <small>{`${formatBytes(entry.size, language)} · ${formatDate(entry.mod_time, language)}`}</small>
+                </span>
+              </a>
+            )}
             <span className="file-row-actions">
               {entry.is_dir ? (
                 <>
@@ -698,6 +773,15 @@ function parentPathFor(entryPath) {
   return parts.length ? parts.join('/') : '.';
 }
 
+function parentDirectoriesFor(entryPath) {
+  const parts = entryPath.split('/').filter(Boolean);
+  const directories = ['.'];
+  for (let index = 1; index < parts.length; index += 1) {
+    directories.push(parts.slice(0, index).join('/'));
+  }
+  return directories;
+}
+
 function moveEntryPath(entry, fromPath, toPath) {
   if (entry.path === fromPath) {
     return { ...entry, path: toPath, name: toPath.split('/').filter(Boolean).pop() || entry.name };
@@ -753,10 +837,45 @@ function viewModeFromLocation() {
   return view === 'plain' || view === 'split' ? view : 'rendered';
 }
 
-function updateSearchParam(key, value) {
+function filePathFromLocation() {
+  return normalizeFilePath(new URLSearchParams(window.location.search).get('file') || '');
+}
+
+function normalizeFilePath(value) {
+  return String(value || '').split('/').filter(Boolean).join('/');
+}
+
+function fileHref(slug, filePath, viewMode) {
+  const params = new URLSearchParams(window.location.search);
+  params.set('page', 'vault');
+  params.set('slug', slug);
+  params.set('section', 'editor');
+  params.set('file', filePath);
+  params.set('view', viewMode);
+  return `/?${params.toString()}`;
+}
+
+function updateSearchParams(values) {
   const url = new URL(window.location.href);
-  url.searchParams.set(key, value);
+  for (const [key, value] of Object.entries(values)) {
+    if (value === null || value === undefined || value === '') {
+      url.searchParams.delete(key);
+    } else {
+      url.searchParams.set(key, value);
+    }
+  }
   window.history.pushState(null, '', `${url.pathname}?${url.searchParams.toString()}`);
+}
+
+function shouldUseNativeNavigation(event) {
+  return (
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  );
 }
 
 function localeForLanguage(language) {
