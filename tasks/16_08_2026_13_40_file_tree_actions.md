@@ -67,7 +67,7 @@ Plan: [16_08_2026_13_40_file_tree_actions.md](../plans/16_08_2026_13_40_file_tre
 
 ## Результаты валидации
 
-- Commit: `5f730d3`
+- Commit: `0db50df`
 - `npm test` из `web/`: 3 test files passed, 22 tests passed.
 - `npm run build` из `web/`: production frontend build passed.
 - `go test ./...`: passed.
