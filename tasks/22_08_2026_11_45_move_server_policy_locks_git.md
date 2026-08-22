@@ -4,6 +4,8 @@ Status: DONE
 Created: 2026-08-22 11:45
 Project: mdock
 Plan: [22_08_2026_11_45_move_server_policy_locks_git.md](../plans/22_08_2026_11_45_move_server_policy_locks_git.md)
+Commits:
+- `e91bed0` — `fix: enforce move lock policy`
 
 ## Проблема
 
