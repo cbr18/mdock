@@ -9,5 +9,5 @@ mdock-e2e-dashboard.png
 *.db
 *.db-shm
 *.db-wal
-mdock
+/mdock
 .DS_Store
