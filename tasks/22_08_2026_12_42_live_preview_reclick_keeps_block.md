@@ -4,6 +4,8 @@ Status: DONE
 Created: 2026-08-22 12:42
 Project: mdock
 Plan: [22_08_2026_12_42_live_preview_reclick_keeps_block.md](../plans/22_08_2026_12_42_live_preview_reclick_keeps_block.md)
+Commits:
+- `7781260` — `fix: keep live preview block active on reclick`
 
 ## Проблема
 
