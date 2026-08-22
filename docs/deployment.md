@@ -70,6 +70,7 @@ Branch policy:
 - push в `main` запускает `.forgejo/workflows/prod-deploy.yml`;
 - prod workflow сначала выполняет тот же тестовый набор, и только после успешных проверок запускает SSH deploy;
 - `workflow_dispatch` оставлен для ручного запуска.
+- `permissions` в Forgejo Actions не используется, права выдаются через Forgejo Authorized Integrations.
 
 Test pipeline и pre-deploy CI:
 

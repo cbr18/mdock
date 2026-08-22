@@ -10,9 +10,6 @@ concurrency:
   group: prod-deploy-main
   cancel-in-progress: false
 
-permissions:
-  contents: read
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -69,6 +66,7 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "[deploy] checking required secrets"
           : "${PROD_SSH_HOST:?PROD_SSH_HOST is required}"
           : "${PROD_SSH_USER:?PROD_SSH_USER is required}"
           : "${PROD_SSH_KEY:?PROD_SSH_KEY is required}"
@@ -79,6 +77,7 @@ jobs:
           key_path="$HOME/.ssh/mdock_prod_deploy"
           known_hosts_path="$HOME/.ssh/known_hosts"
 
+          echo "[deploy] preparing local ssh client"
           if ! command -v ssh >/dev/null 2>&1 || ! command -v ssh-keyscan >/dev/null 2>&1 || ! command -v ssh-keygen >/dev/null 2>&1; then
             apt-get update
             apt-get install -y --no-install-recommends openssh-client
@@ -94,6 +93,7 @@ jobs:
             exit 1
           fi
 
+          echo "[deploy] checking production host fingerprint"
           ssh-keyscan -p "$port" "$PROD_SSH_HOST" > "$known_hosts_path"
           chmod 600 "$known_hosts_path"
 
@@ -105,6 +105,7 @@ jobs:
             exit 1
           fi
 
+          echo "[deploy] running remote deploy script"
           ssh \
             -i "$key_path" \
             -p "$port" \
