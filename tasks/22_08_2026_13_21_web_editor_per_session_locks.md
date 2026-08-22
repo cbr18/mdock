@@ -4,6 +4,8 @@ Status: DONE
 Created: 2026-08-22 13:21
 Project: mdock
 Plan: [22_08_2026_13_21_web_editor_per_session_locks.md](../plans/22_08_2026_13_21_web_editor_per_session_locks.md)
+Commits:
+- `11c81ee` — `fix: use per-editor web lock owners`
 
 ## Проблема
 
