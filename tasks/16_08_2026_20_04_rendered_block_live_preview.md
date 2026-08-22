@@ -1,6 +1,6 @@
 # Rendered Block Live Preview
 
-Status: IN WORK
+Status: DONE
 Created: 2026-08-16 20:04
 Project: mdock
 Plan: [16_08_2026_20_04_rendered_block_live_preview.md](../plans/16_08_2026_20_04_rendered_block_live_preview.md)
@@ -86,6 +86,7 @@ Plan: [16_08_2026_20_04_rendered_block_live_preview.md](../plans/16_08_2026_20_0
 - `./test/run-smoke.sh` — passed.
 - Playwright MCP manual check on `http://127.0.0.1:18081/?page=vault&slug=admin` — passed: live editor contains rendered `h1`, `table`, `ul`, task checkboxes, `blockquote`, `pre code`, `hr`; click on rendered heading reveals Markdown source.
 - Commit: `29bb3b3`.
+- Дополнительная стабилизация визуального паритета, высоты, клавиатуры и внешнего shell вынесена в задачу [21_08_2026_23_13_live_preview_height_keyboard.md](21_08_2026_23_13_live_preview_height_keyboard.md).
 
 ## Откат
 
