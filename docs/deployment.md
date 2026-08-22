@@ -94,6 +94,7 @@ Prod deploy pipeline:
 - проверяет `PROD_SSH_FINGERPRINT` перед подключением;
 - создаёт `PROD_APP_DIR`, если папки нет;
 - если в `PROD_APP_DIR` ещё нет `.git`, инициализирует checkout из `PROD_REPO_SSH_URL`;
+- если в `PROD_APP_DIR` есть невалидная `.git`, deploy останавливается с явной ошибкой, чтобы не удалять данные автоматически;
 - делает `git fetch origin main`, `checkout -B main origin/main`, `pull --ff-only`;
 - запускает `./scripts/deploy-prod.sh`;
 - deploy script делает build/pull, SQL backup, `docker compose up -d --remove-orphans`;

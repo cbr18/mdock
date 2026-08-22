@@ -115,11 +115,16 @@ jobs:
             mkdir -p "$PROD_APP_DIR"
             cd "$PROD_APP_DIR"
 
-            if [ ! -d .git ]; then
+            if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+              git remote set-url origin "$PROD_REPO_SSH_URL"
+            else
+              if [ -e .git ]; then
+                echo "PROD_APP_DIR contains invalid git metadata: $PROD_APP_DIR/.git" >&2
+                echo "Move or remove that .git path on the server, then rerun deploy." >&2
+                exit 1
+              fi
               git init
               git remote add origin "$PROD_REPO_SSH_URL"
-            else
-              git remote set-url origin "$PROD_REPO_SSH_URL"
             fi
 
             git fetch --prune origin main
