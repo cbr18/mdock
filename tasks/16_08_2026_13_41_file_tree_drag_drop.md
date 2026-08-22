@@ -70,6 +70,7 @@ Plan: [16_08_2026_13_41_file_tree_drag_drop.md](../plans/16_08_2026_13_41_file_t
 
 ## Результаты валидации
 
+- Commit: `412a974`
 - `npm test` из `web/`: 3 test files passed, 22 tests passed.
 - `npm run build` из `web/`: production frontend build passed.
 - `go test ./...`: passed.
