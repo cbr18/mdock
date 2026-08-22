@@ -397,6 +397,45 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	if releaseLock.Code != http.StatusOK {
 		t.Fatalf("release lock status = %d body=%s", releaseLock.Code, releaseLock.Body.String())
 	}
+	ownerLockBody, _ := json.Marshal(map[string]string{"path": "web/editor.md", "owner": "tab-a"})
+	ownerLock := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/locks", bytes.NewReader(ownerLockBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(ownerLock, req)
+	if ownerLock.Code != http.StatusOK {
+		t.Fatalf("owner lock status = %d body=%s", ownerLock.Code, ownerLock.Body.String())
+	}
+	sameSessionDifferentOwnerBody, _ := json.Marshal(map[string]string{"path": "web/editor.md", "owner": "tab-b"})
+	sameSessionDifferentOwner := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/locks", bytes.NewReader(sameSessionDifferentOwnerBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(sameSessionDifferentOwner, req)
+	if sameSessionDifferentOwner.Code != http.StatusLocked {
+		t.Fatalf("same session different owner lock status = %d body=%s", sameSessionDifferentOwner.Code, sameSessionDifferentOwner.Body.String())
+	}
+	sameSessionDifferentOwnerWrite := httptest.NewRecorder()
+	body, _ = json.Marshal(map[string]string{"path": "web/editor.md", "content": "blocked by tab lock", "owner": "tab-b"})
+	req = httptest.NewRequest(http.MethodPut, "/api/vaults/work-notes/files/content", bytes.NewReader(body))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(sameSessionDifferentOwnerWrite, req)
+	if sameSessionDifferentOwnerWrite.Code != http.StatusLocked {
+		t.Fatalf("same session different owner write status = %d body=%s", sameSessionDifferentOwnerWrite.Code, sameSessionDifferentOwnerWrite.Body.String())
+	}
+	sameSessionOwnerWrite := httptest.NewRecorder()
+	body, _ = json.Marshal(map[string]string{"path": "web/editor.md", "content": "updated by tab owner", "owner": "tab-a"})
+	req = httptest.NewRequest(http.MethodPut, "/api/vaults/work-notes/files/content", bytes.NewReader(body))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(sameSessionOwnerWrite, req)
+	if sameSessionOwnerWrite.Code != http.StatusOK {
+		t.Fatalf("same session owner write status = %d body=%s", sameSessionOwnerWrite.Code, sameSessionOwnerWrite.Body.String())
+	}
+	releaseOwnerLock := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/api/vaults/work-notes/locks?path=web/editor.md&owner=tab-a", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(releaseOwnerLock, req)
+	if releaseOwnerLock.Code != http.StatusOK {
+		t.Fatalf("release owner lock status = %d body=%s", releaseOwnerLock.Code, releaseOwnerLock.Body.String())
+	}
 	nestedDirBody, _ := json.Marshal(map[string]string{"path": "web/locked-dir"})
 	nestedDir := httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/dirs", bytes.NewReader(nestedDirBody))

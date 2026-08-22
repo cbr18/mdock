@@ -16,26 +16,26 @@ describe('file editor session', () => {
   test('acquires lock before reading and releases on close', async () => {
     const api = createAPI();
     const timers = { setInterval: vi.fn(() => 1), clearInterval: vi.fn() };
-    const session = createFileEditorSession({ slug: 'vault', path: 'note.md', api, timers });
+    const session = createFileEditorSession({ slug: 'vault', path: 'note.md', api, timers, owner: 'tab-a' });
 
     await expect(session.open()).resolves.toEqual({ content: '# Note' });
-    expect(api.acquireFileLock).toHaveBeenCalledWith('vault', 'note.md');
+    expect(api.acquireFileLock).toHaveBeenCalledWith('vault', 'note.md', 'tab-a');
     expect(api.readFileContent).toHaveBeenCalledWith('vault', 'note.md');
     expect(timers.setInterval).toHaveBeenCalled();
     expect(session.isOpen()).toBe(true);
 
     await session.close();
     expect(timers.clearInterval).toHaveBeenCalledWith(1);
-    expect(api.releaseFileLock).toHaveBeenCalledWith('vault', 'note.md');
+    expect(api.releaseFileLock).toHaveBeenCalledWith('vault', 'note.md', 'tab-a');
     expect(session.isOpen()).toBe(false);
   });
 
   test('releases lock when read after lock fails', async () => {
     const api = createAPI({ readFileContent: vi.fn().mockRejectedValue(new Error('read_failed')) });
-    const session = createFileEditorSession({ slug: 'vault', path: 'note.md', api });
+    const session = createFileEditorSession({ slug: 'vault', path: 'note.md', api, owner: 'tab-a' });
 
     await expect(session.open()).rejects.toThrow('read_failed');
-    expect(api.releaseFileLock).toHaveBeenCalledWith('vault', 'note.md');
+    expect(api.releaseFileLock).toHaveBeenCalledWith('vault', 'note.md', 'tab-a');
     expect(session.isOpen()).toBe(false);
   });
 
@@ -43,10 +43,11 @@ describe('file editor session', () => {
     const error = new Error('locked');
     error.status = 423;
     const api = createAPI({ writeFileContent: vi.fn().mockRejectedValue(error) });
-    const session = createFileEditorSession({ slug: 'vault', path: 'note.md', api });
+    const session = createFileEditorSession({ slug: 'vault', path: 'note.md', api, owner: 'tab-a' });
 
     await session.open();
     await expect(session.save('changed')).rejects.toThrow('locked');
+    expect(api.writeFileContent).toHaveBeenCalledWith('vault', 'note.md', 'changed', 'tab-a');
     expect(session.isOpen()).toBe(true);
   });
 
@@ -61,12 +62,21 @@ describe('file editor session', () => {
       clearInterval: vi.fn()
     };
     const onHeartbeatError = vi.fn();
-    const session = createFileEditorSession({ slug: 'vault', path: 'note.md', api, timers, onHeartbeatError });
+    const session = createFileEditorSession({ slug: 'vault', path: 'note.md', api, timers, onHeartbeatError, owner: 'tab-a' });
 
     await session.open();
     await heartbeat();
 
+    expect(api.heartbeatFileLock).toHaveBeenCalledWith('vault', 'note.md', 'tab-a');
     expect(onHeartbeatError).toHaveBeenCalled();
     expect(timers.clearInterval).toHaveBeenCalledWith(7);
+  });
+
+  test('generates a lock owner token when one is not provided', () => {
+    const api = createAPI();
+    const session = createFileEditorSession({ slug: 'vault', path: 'note.md', api });
+
+    expect(session.owner()).toEqual(expect.any(String));
+    expect(session.owner().length).toBeGreaterThan(8);
   });
 });

@@ -20,6 +20,7 @@ import (
 type fileContentRequest struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
+	Owner   string `json:"owner"`
 }
 
 type createDirRequest struct {
@@ -32,7 +33,8 @@ type movePathRequest struct {
 }
 
 type lockPathRequest struct {
-	Path string `json:"path"`
+	Path  string `json:"path"`
+	Owner string `json:"owner"`
 }
 
 func (h *Handler) listFiles(w http.ResponseWriter, r *http.Request) {
@@ -63,7 +65,7 @@ func (h *Handler) createFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := userFromContext(r.Context())
-	item, info, err := h.app.CreateTextFile(r.Context(), user.ID, chi.URLParam(r, "slug"), req.Path, req.Content, webLockOwner(r, user.ID))
+	item, info, err := h.app.CreateTextFile(r.Context(), user.ID, chi.URLParam(r, "slug"), req.Path, req.Content, webLockOwner(r, user.ID, ""))
 	if h.handleFileError(w, "create file", err) {
 		return
 	}
@@ -80,7 +82,7 @@ func (h *Handler) writeFileContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := userFromContext(r.Context())
-	item, info, err := h.app.WriteTextFile(r.Context(), user.ID, chi.URLParam(r, "slug"), req.Path, req.Content, webLockOwner(r, user.ID))
+	item, info, err := h.app.WriteTextFile(r.Context(), user.ID, chi.URLParam(r, "slug"), req.Path, req.Content, webLockOwner(r, user.ID, req.Owner))
 	if h.handleFileError(w, "write file content", err) {
 		return
 	}
@@ -97,7 +99,7 @@ func (h *Handler) createDir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := userFromContext(r.Context())
-	item, info, err := h.app.CreateDir(r.Context(), user.ID, chi.URLParam(r, "slug"), req.Path, webLockOwner(r, user.ID))
+	item, info, err := h.app.CreateDir(r.Context(), user.ID, chi.URLParam(r, "slug"), req.Path, webLockOwner(r, user.ID, ""))
 	if h.handleFileError(w, "create directory", err) {
 		return
 	}
@@ -114,7 +116,7 @@ func (h *Handler) movePath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := userFromContext(r.Context())
-	item, err := h.app.MovePath(r.Context(), user.ID, chi.URLParam(r, "slug"), req.FromPath, req.ToPath, webLockOwner(r, user.ID))
+	item, err := h.app.MovePath(r.Context(), user.ID, chi.URLParam(r, "slug"), req.FromPath, req.ToPath, webLockOwner(r, user.ID, ""))
 	if h.handleFileError(w, "move path", err) {
 		return
 	}
@@ -128,7 +130,7 @@ func (h *Handler) deletePath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := userFromContext(r.Context())
-	item, err := h.app.DeletePath(r.Context(), user.ID, chi.URLParam(r, "slug"), path, webLockOwner(r, user.ID))
+	item, err := h.app.DeletePath(r.Context(), user.ID, chi.URLParam(r, "slug"), path, webLockOwner(r, user.ID, ""))
 	if h.handleFileError(w, "delete path", err) {
 		return
 	}
@@ -141,7 +143,7 @@ func (h *Handler) acquireFileLock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := userFromContext(r.Context())
-	item, lock, err := h.app.AcquireFileLock(r.Context(), user.ID, chi.URLParam(r, "slug"), req.Path, webLockOwner(r, user.ID))
+	item, lock, err := h.app.AcquireFileLock(r.Context(), user.ID, chi.URLParam(r, "slug"), req.Path, webLockOwner(r, user.ID, req.Owner))
 	if h.handleFileError(w, "acquire file lock", err) {
 		return
 	}
@@ -154,7 +156,7 @@ func (h *Handler) heartbeatFileLock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := userFromContext(r.Context())
-	item, err := h.app.HeartbeatFileLock(r.Context(), user.ID, chi.URLParam(r, "slug"), req.Path, webLockOwner(r, user.ID))
+	item, err := h.app.HeartbeatFileLock(r.Context(), user.ID, chi.URLParam(r, "slug"), req.Path, webLockOwner(r, user.ID, req.Owner))
 	if h.handleFileError(w, "heartbeat file lock", err) {
 		return
 	}
@@ -168,7 +170,7 @@ func (h *Handler) releaseFileLock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := userFromContext(r.Context())
-	item, err := h.app.ReleaseFileLock(r.Context(), user.ID, chi.URLParam(r, "slug"), path, webLockOwner(r, user.ID))
+	item, err := h.app.ReleaseFileLock(r.Context(), user.ID, chi.URLParam(r, "slug"), path, webLockOwner(r, user.ID, r.URL.Query().Get("owner")))
 	if h.handleFileError(w, "release file lock", err) {
 		return
 	}
@@ -223,7 +225,11 @@ func queryPath(r *http.Request) string {
 	return "."
 }
 
-func webLockOwner(r *http.Request, userID int64) string {
+func webLockOwner(r *http.Request, userID int64, clientOwner string) string {
+	if strings.TrimSpace(clientOwner) != "" {
+		sum := sha256.Sum256([]byte(strconv.FormatInt(userID, 10) + ":" + clientOwner))
+		return "web:" + strconv.FormatInt(userID, 10) + ":" + hex.EncodeToString(sum[:8])
+	}
 	sessionID := ""
 	if cookie, err := r.Cookie("mdock_session"); err == nil {
 		sessionID = cookie.Value
