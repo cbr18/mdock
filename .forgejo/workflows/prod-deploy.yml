@@ -64,6 +64,8 @@ jobs:
           PROD_SSH_FINGERPRINT: ${{ secrets.PROD_SSH_FINGERPRINT }}
           PROD_APP_DIR: ${{ secrets.PROD_APP_DIR }}
           PROD_REPO_SSH_URL: ssh://kotyonki.su:2288/cbr/mdock.git
+          PROD_REPO_SSH_HOST: kotyonki.su
+          PROD_REPO_SSH_PORT: "2288"
         run: |
           set -euo pipefail
 
@@ -109,8 +111,15 @@ jobs:
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
             "$PROD_SSH_USER@$PROD_SSH_HOST" \
-            "PROD_APP_DIR=$(printf '%q' "$PROD_APP_DIR") PROD_REPO_SSH_URL=$(printf '%q' "$PROD_REPO_SSH_URL") bash -s" <<'REMOTE'
+            "PROD_APP_DIR=$(printf '%q' "$PROD_APP_DIR") PROD_REPO_SSH_URL=$(printf '%q' "$PROD_REPO_SSH_URL") PROD_REPO_SSH_HOST=$(printf '%q' "$PROD_REPO_SSH_HOST") PROD_REPO_SSH_PORT=$(printf '%q' "$PROD_REPO_SSH_PORT") bash -s" <<'REMOTE'
             set -euo pipefail
+
+            install -m 700 -d "$HOME/.ssh"
+            touch "$HOME/.ssh/known_hosts"
+            chmod 600 "$HOME/.ssh/known_hosts"
+            if ! ssh-keygen -F "[$PROD_REPO_SSH_HOST]:$PROD_REPO_SSH_PORT" -f "$HOME/.ssh/known_hosts" >/dev/null 2>&1; then
+              ssh-keyscan -p "$PROD_REPO_SSH_PORT" "$PROD_REPO_SSH_HOST" >> "$HOME/.ssh/known_hosts"
+            fi
 
             mkdir -p "$PROD_APP_DIR"
             cd "$PROD_APP_DIR"

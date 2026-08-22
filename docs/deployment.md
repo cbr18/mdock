@@ -93,6 +93,7 @@ Prod deploy pipeline:
 - не использует внешние marketplace actions для SSH, чтобы Forgejo runner не зависел от зеркал `data.forgejo.org`;
 - проверяет `PROD_SSH_FINGERPRINT` перед подключением;
 - создаёт `PROD_APP_DIR`, если папки нет;
+- добавляет `kotyonki.su:2288` в `~/.ssh/known_hosts` production user перед `git fetch`;
 - если в `PROD_APP_DIR` ещё нет `.git`, инициализирует checkout из `PROD_REPO_SSH_URL`;
 - если в `PROD_APP_DIR` есть невалидная `.git`, deploy останавливается с явной ошибкой, чтобы не удалять данные автоматически;
 - делает `git fetch origin main`, `checkout -B main origin/main`, `pull --ff-only`;
