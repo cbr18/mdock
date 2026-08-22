@@ -46,6 +46,9 @@ export function livePreviewExtension({ frontmatterLabel = 'Frontmatter' } = {}) 
       { key: 'ArrowDown', run: moveLogicalLine(1) }
     ])),
     Prec.highest(EditorView.domEventHandlers({
+      mousedown(event, view) {
+        return moveCursorInsideActiveLine(event, view);
+      },
       keydown(event, view) {
         if ((event.key !== 'ArrowUp' && event.key !== 'ArrowDown') || event.altKey || event.ctrlKey || event.metaKey) {
           return false;
@@ -131,10 +134,60 @@ function activeBlockLineDecorations(state, block) {
     const classes = ['cm-live-active-source-line'];
     if (lineNumber === startLine.number) classes.push('cm-live-active-source-line-first');
     if (lineNumber === endLine.number) classes.push('cm-live-active-source-line-last');
-    decorations.push(Decoration.line({ class: classes.join(' ') }).range(line.from));
+    decorations.push(Decoration.line({
+      attributes: { 'data-live-line-from': String(line.from) },
+      class: classes.join(' ')
+    }).range(line.from));
   }
 
   return decorations;
+}
+
+function moveCursorInsideActiveLine(event, view) {
+  if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+    return false;
+  }
+  const target = event.target;
+  if (!(target instanceof Element)) return false;
+
+  const lineElement = target.closest('.cm-live-active-source-line');
+  if (!lineElement) return false;
+
+  const lineFrom = Number(lineElement.getAttribute('data-live-line-from'));
+  if (!Number.isFinite(lineFrom)) return false;
+
+  const caret = caretFromPoint(event.clientX, event.clientY);
+  let position = lineFrom;
+  if (caret) {
+    try {
+      position = view.posAtDOM(caret.node, caret.offset);
+    } catch {
+      position = lineFrom;
+    }
+  }
+
+  const line = view.state.doc.lineAt(lineFrom);
+  position = Math.max(line.from, Math.min(position, line.to));
+  event.preventDefault();
+  view.dispatch({ selection: { anchor: position }, scrollIntoView: false, userEvent: 'select.pointer' });
+  view.focus();
+  return true;
+}
+
+function caretFromPoint(x, y) {
+  if (typeof document.caretPositionFromPoint === 'function') {
+    const position = document.caretPositionFromPoint(x, y);
+    if (position) {
+      return { node: position.offsetNode, offset: position.offset };
+    }
+  }
+  if (typeof document.caretRangeFromPoint === 'function') {
+    const range = document.caretRangeFromPoint(x, y);
+    if (range) {
+      return { node: range.startContainer, offset: range.startOffset };
+    }
+  }
+  return null;
 }
 
 function isActiveBlock(block, activeBlock) {
@@ -336,6 +389,7 @@ class RenderedMarkdownBlockWidget extends WidgetType {
         effects: this.setActiveBlock.of(activeBlockRange(this.block)),
         scrollIntoView: true
       });
+      requestLivePreviewMeasure(view);
       view.focus();
     });
 
@@ -397,6 +451,7 @@ class RenderedMarkdownDocumentWidget extends WidgetType {
         effects: this.setActiveBlock.of(activeBlockRange(block)),
         scrollIntoView: true
       });
+      requestLivePreviewMeasure(view);
       view.focus();
     });
 
@@ -446,7 +501,18 @@ function activeBlockRange(block) {
   return { from: block.from, to: block.to, sourceTo: block.sourceTo };
 }
 
+function requestLivePreviewMeasure(view) {
+  const schedule = typeof window.requestAnimationFrame === 'function'
+    ? window.requestAnimationFrame
+    : (callback) => window.setTimeout(callback, 0);
+  schedule(() => {
+    if (view.destroyed) return;
+    view.requestMeasure();
+  });
+}
+
 export const __livePreviewInternals = {
   activeBlockRange,
+  requestLivePreviewMeasure,
   splitBlocks
 };
