@@ -74,6 +74,7 @@ Plan: [22_08_2026_13_48_editor_lock_lifecycle_release.md](../plans/22_08_2026_13
 
 ## Результаты валидации
 
+- Commit: `6b49fad`
 - `npm test` — успешно, 5 файлов тестов, 28 тестов.
 - `npm run build` — успешно.
 - `go test ./...` — успешно.
