@@ -4,6 +4,8 @@ Status: DONE
 Created: 2026-08-22 13:04
 Project: mdock
 Plan: [22_08_2026_13_04_live_preview_cursor_alignment.md](../plans/22_08_2026_13_04_live_preview_cursor_alignment.md)
+Commits:
+- `ca9c4b2` — `fix: align live preview cursor lines`
 
 ## Проблема
 
