@@ -779,6 +779,14 @@ legend {
   min-height: min(760px, calc(100vh - 240px));
 }
 
+.files-layout-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.files-layout-collapsed .file-list-pane {
+  display: none;
+}
+
 .file-list-pane,
 .file-preview-pane {
   min-width: 0;
@@ -794,7 +802,7 @@ legend {
 
 .file-pathbar {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-columns: 38px minmax(0, 1fr) 34px 34px;
   align-items: center;
   gap: 8px;
   padding: 10px;
@@ -820,13 +828,15 @@ legend {
 }
 
 .file-row {
-  justify-content: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
   width: 100%;
   min-height: 44px;
-  padding: 8px 10px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-soft);
-  text-align: left;
 }
 
 .file-row:hover,
@@ -835,10 +845,51 @@ legend {
   color: var(--text);
 }
 
+.file-row-open {
+  justify-content: flex-start;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.file-row-open:hover {
+  background: transparent;
+}
+
 .file-row-main {
   display: grid;
   gap: 2px;
   min-width: 0;
+}
+
+.file-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 6px;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.file-row:hover .file-row-actions,
+.file-row:focus-within .file-row-actions {
+  opacity: 1;
+}
+
+.file-row-actions .icon-button {
+  width: 28px;
+  height: 28px;
+}
+
+.danger-icon-button {
+  color: var(--danger);
+}
+
+.danger-icon-button:hover {
+  color: var(--danger);
 }
 
 .file-row-main strong,

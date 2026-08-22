@@ -1,6 +1,6 @@
 # File tree actions
 
-Status: CREATED
+Status: DONE
 Created: 2026-08-16 13:40
 Project: mdock
 Plan: [16_08_2026_13_40_file_tree_actions.md](../plans/16_08_2026_13_40_file_tree_actions.md)
@@ -67,7 +67,13 @@ Plan: [16_08_2026_13_40_file_tree_actions.md](../plans/16_08_2026_13_40_file_tre
 
 ## Результаты валидации
 
-- Задача оставлена как будущая. Реализация не выполнялась в текущем проходе по требованию пользователя.
+- Commit: `5f730d3`
+- `npm test` из `web/`: 3 test files passed, 22 tests passed.
+- `npm run build` из `web/`: production frontend build passed.
+- `go test ./...`: passed.
+- `cd test && docker compose up -d --build`: test stack rebuilt and started on canonical port 18081.
+- `./test/run-smoke.sh`: passed.
+- Playwright MCP на `http://127.0.0.1:18081/?page=vault&slug=admin`: проверены сворачивание/разворачивание панели файлов, создание файла, создание папки, удаление созданного файла и удаление созданной папки.
 
 ## Откат
 

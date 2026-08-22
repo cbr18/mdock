@@ -1,6 +1,6 @@
-import { ChevronLeft, Code2, FileText, Folder, FolderOpen, Rows2, Save } from 'lucide-react';
+import { ChevronLeft, Code2, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, PanelLeftClose, PanelLeftOpen, Rows2, Save, Trash2 } from 'lucide-react';
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { listFiles, readFileContent } from '../../api/files.js';
+import { createDirectory, createFile, deletePath, listFiles, readFileContent } from '../../api/files.js';
 import { StatusMessage } from '../../components/ui/StatusMessage.jsx';
 import { createFileEditorSession } from '../editor/fileEditorSession.js';
 import { useLanguage } from '../i18n/LanguageProvider.jsx';
@@ -20,6 +20,7 @@ export function VaultFilesPanel({ slug }) {
   const [message, setMessage] = useState('');
   const [lockStatus, setLockStatus] = useState('idle');
   const [viewMode, setViewMode] = useState(() => viewModeFromLocation());
+  const [filesCollapsed, setFilesCollapsed] = useState(false);
   const sessionRef = useRef(null);
 
   useEffect(() => () => {
@@ -52,12 +53,18 @@ export function VaultFilesPanel({ slug }) {
         setEntries(sortEntries(payload.entries || [], language));
       })
       .catch(() => {
-        if (active) setMessage(t('fileLoadFailed'));
+        if (!active) return;
+        setMessage(t('fileLoadFailed'));
       });
     return () => {
       active = false;
     };
   }, [slug, path, t, language]);
+
+  async function loadEntries() {
+    const payload = await listFiles(slug, path);
+    setEntries(sortEntries(payload.entries || [], language));
+  }
 
   useEffect(() => {
     function handlePopState() {
@@ -179,14 +186,72 @@ export function VaultFilesPanel({ slug }) {
     updateSearchParam('view', nextMode);
   }
 
+  async function handleCreateFile(basePath = path) {
+    const input = window.prompt(t('newFilePrompt'));
+    if (!input) return;
+    const name = ensureMarkdownExtension(input.trim());
+    if (!name) return;
+    try {
+      const nextPath = joinPath(basePath, name);
+      await createFile(slug, nextPath, '');
+      if (basePath !== path) {
+        setPath(basePath);
+      } else {
+        await loadEntries();
+      }
+      setMessage(t('fileCreated'));
+    } catch {
+      setMessage(t('fileCreateFailed'));
+    }
+  }
+
+  async function handleCreateDirectory(basePath = path) {
+    const name = window.prompt(t('newFolderPrompt'))?.trim();
+    if (!name) return;
+    try {
+      await createDirectory(slug, joinPath(basePath, name));
+      if (basePath !== path) {
+        setPath(basePath);
+      } else {
+        await loadEntries();
+      }
+      setMessage(t('folderCreated'));
+    } catch {
+      setMessage(t('folderCreateFailed'));
+    }
+  }
+
+  async function handleDeleteEntry(entry) {
+    const message = entry.is_dir ? t('confirmDeleteFolder') : t('confirmDeleteFile');
+    if (!window.confirm(message.replace('{name}', entry.name))) return;
+    try {
+      await deletePath(slug, entry.path);
+      if (selectedFile && (selectedFile.path === entry.path || selectedFile.path.startsWith(`${entry.path}/`))) {
+        await closeEditorSession();
+        setSelectedFile(null);
+        setContent('');
+        setSavedContent('');
+        setEditing(false);
+      }
+      await loadEntries();
+      setMessage(entry.is_dir ? t('folderDeleted') : t('fileDeleted'));
+    } catch {
+      setMessage(t('deleteFailed'));
+    }
+  }
+
   return (
     <section className="vault-workspace">
       <div className="workspace-header">
         <div className="panel-title">
           <FolderOpen size={18} aria-hidden="true" />
-          <h3>{t('vaultEditor')}</h3>
+          <span className="sr-only">{t('filesWorkspace')}</span>
         </div>
         <div className="workspace-actions">
+          <button type="button" className="icon-text-button" onClick={() => setFilesCollapsed((value) => !value)}>
+            {filesCollapsed ? <PanelLeftOpen size={16} aria-hidden="true" /> : <PanelLeftClose size={16} aria-hidden="true" />}
+            {filesCollapsed ? t('showFiles') : t('hideFiles')}
+          </button>
           <label className="edit-mode-toggle">
             <input type="checkbox" checked={editing} disabled={!selectedFile || !isMarkdown(selectedFile.name)} onChange={handleEditToggle} />
             <span>{t('editMode')}</span>
@@ -212,7 +277,7 @@ export function VaultFilesPanel({ slug }) {
         </div>
       </div>
       <StatusMessage className="page-status">{message}</StatusMessage>
-      <div className="files-layout">
+      <div className={`files-layout ${filesCollapsed ? 'files-layout-collapsed' : ''}`}>
         <section className="file-list-pane" aria-label={t('files')}>
           <div className="file-pathbar">
             <button type="button" className="icon-button" onClick={() => setPath(parentPath)} disabled={path === '.'}>
@@ -220,21 +285,44 @@ export function VaultFilesPanel({ slug }) {
               <span className="sr-only">{t('parentFolder')}</span>
             </button>
             <span>{path === '.' ? '/' : path}</span>
+            <button type="button" className="icon-button" onClick={() => handleCreateFile(path)} title={t('createFile')}>
+              <FilePlus2 size={16} aria-hidden="true" />
+              <span className="sr-only">{t('createFile')}</span>
+            </button>
+            <button type="button" className="icon-button" onClick={() => handleCreateDirectory(path)} title={t('createFolder')}>
+              <FolderPlus size={16} aria-hidden="true" />
+              <span className="sr-only">{t('createFolder')}</span>
+            </button>
           </div>
           <div className="file-list">
             {entries.length ? entries.map((entry) => (
-              <button
-                type="button"
-                key={entry.path}
-                className={`file-row ${selectedFile?.path === entry.path ? 'active' : ''}`}
-                onClick={() => entry.is_dir ? setPath(entry.path) : openFile(entry)}
-              >
-                {entry.is_dir ? <Folder size={18} aria-hidden="true" /> : <FileText size={18} aria-hidden="true" />}
-                <span className="file-row-main">
-                  <strong>{entry.name}</strong>
-                  <small>{entry.is_dir ? t('folder') : `${formatBytes(entry.size, language)} · ${formatDate(entry.mod_time, language)}`}</small>
+              <div key={entry.path} className={`file-row ${selectedFile?.path === entry.path ? 'active' : ''}`}>
+                <button type="button" className="file-row-open" aria-label={entry.name} onClick={() => entry.is_dir ? setPath(entry.path) : openFile(entry)}>
+                  {entry.is_dir ? <Folder size={18} aria-hidden="true" /> : <FileText size={18} aria-hidden="true" />}
+                  <span className="file-row-main">
+                    <strong>{entry.name}</strong>
+                    <small>{entry.is_dir ? t('folder') : `${formatBytes(entry.size, language)} · ${formatDate(entry.mod_time, language)}`}</small>
+                  </span>
+                </button>
+                <span className="file-row-actions">
+                  {entry.is_dir ? (
+                    <>
+                      <button type="button" className="icon-button" onClick={() => handleCreateFile(entry.path)} title={t('createFileInFolder')}>
+                        <FilePlus2 size={15} aria-hidden="true" />
+                        <span className="sr-only">{t('createFileInFolder')}</span>
+                      </button>
+                      <button type="button" className="icon-button" onClick={() => handleCreateDirectory(entry.path)} title={t('createFolderInFolder')}>
+                        <FolderPlus size={15} aria-hidden="true" />
+                        <span className="sr-only">{t('createFolderInFolder')}</span>
+                      </button>
+                    </>
+                  ) : null}
+                  <button type="button" className="icon-button danger-icon-button" onClick={() => handleDeleteEntry(entry)} title={`${entry.is_dir ? t('deleteFolder') : t('deleteFile')}: ${entry.name}`}>
+                    <Trash2 size={15} aria-hidden="true" />
+                    <span className="sr-only">{entry.is_dir ? t('deleteFolder') : t('deleteFile')}: {entry.name}</span>
+                  </button>
                 </span>
-              </button>
+              </div>
             )) : <p className="muted">{t('noFiles')}</p>}
           </div>
         </section>
@@ -327,6 +415,16 @@ function sortEntries(entries, language) {
 
 function isMarkdown(name) {
   return /\.md(?:own)?$/i.test(name);
+}
+
+function ensureMarkdownExtension(name) {
+  if (!name) return '';
+  return /\.[^/.]+$/.test(name) ? name : `${name}.md`;
+}
+
+function joinPath(basePath, name) {
+  if (!basePath || basePath === '.') return name;
+  return `${basePath.replace(/\/+$/, '')}/${name.replace(/^\/+/, '')}`;
 }
 
 function formatBytes(size, language) {

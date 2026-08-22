@@ -172,7 +172,11 @@ test('supports browser back after opening a vault', async () => {
 
 test('renders vault file list and markdown preview', async () => {
   vi.stubGlobal('scrollTo', vi.fn());
-  const fetchMock = vi.fn(async (url) => {
+  let rootEntries = [
+    { name: 'folder', path: 'folder', is_dir: true, size: 0, mod_time: '2026-08-15T10:00:00Z' },
+    { name: 'note.md', path: 'note.md', is_dir: false, size: 41, mod_time: '2026-08-15T10:00:00Z' }
+  ];
+  const fetchMock = vi.fn(async (url, options = {}) => {
     if (url === '/api/auth/me') {
       return response({ username: 'admin', is_admin: true });
     }
@@ -202,11 +206,22 @@ test('renders vault file list and markdown preview', async () => {
     }
     if (url === '/api/vaults/work-notes/files?path=.') {
       return response({
-        entries: [
-          { name: 'folder', path: 'folder', is_dir: true, size: 0, mod_time: '2026-08-15T10:00:00Z' },
-          { name: 'note.md', path: 'note.md', is_dir: false, size: 41, mod_time: '2026-08-15T10:00:00Z' }
-        ]
+        entries: rootEntries
       });
+    }
+    if (url === '/api/vaults/work-notes/files' && options.method === 'POST') {
+      const body = JSON.parse(options.body);
+      rootEntries = [...rootEntries, { name: body.path.split('/').pop(), path: body.path, is_dir: false, size: 0, mod_time: '2026-08-15T11:00:00Z' }];
+      return response({ path: body.path }, 201);
+    }
+    if (url === '/api/vaults/work-notes/dirs' && options.method === 'POST') {
+      const body = JSON.parse(options.body);
+      rootEntries = [...rootEntries, { name: body.path.split('/').pop(), path: body.path, is_dir: true, size: 0, mod_time: '2026-08-15T11:00:00Z' }];
+      return response({ path: body.path }, 201);
+    }
+    if (url === '/api/vaults/work-notes/files?path=draft.md' && options.method === 'DELETE') {
+      rootEntries = rootEntries.filter((entry) => entry.path !== 'draft.md');
+      return response({ status: 'ok' });
     }
     if (url === '/api/vaults/work-notes/files/content?path=note.md') {
       return response({ content: '---\ntags: [test]\n---\n# Note\n\n**bold** [site](https://example.test) [[Page|Alias]]\n\n- [x] done\n- item\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n---' });
@@ -217,14 +232,18 @@ test('renders vault file list and markdown preview', async () => {
     return response({}, 404);
   });
   vi.stubGlobal('fetch', fetchMock);
+  vi.spyOn(window, 'prompt')
+    .mockReturnValueOnce('draft')
+    .mockReturnValueOnce('docs');
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
 
   render(<App />);
 
   await screen.findByRole('heading', { name: 'Хранилища' });
   fireEvent.click(screen.getByRole('button', { name: /Work Notes/ }));
-  expect(await screen.findByRole('button', { name: /note.md/ })).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'note.md' })).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole('button', { name: /note.md/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'note.md' }));
 
   expect(await screen.findByRole('heading', { name: 'Note' })).toBeInTheDocument();
   expect(screen.getByText('tags: [test]')).toBeInTheDocument();
@@ -233,6 +252,28 @@ test('renders vault file list and markdown preview', async () => {
   expect(screen.queryByLabelText('Markdown-редактор')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
   expect(fetchMock).not.toHaveBeenCalledWith('/api/vaults/work-notes/locks', expect.anything());
+
+  fireEvent.click(screen.getByRole('button', { name: 'Скрыть файлы' }));
+  expect(screen.getByRole('button', { name: 'Показать файлы' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Показать файлы' }));
+  expect(screen.getByRole('button', { name: 'Скрыть файлы' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Создать файл' }));
+  expect(await screen.findByRole('button', { name: 'draft.md' })).toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledWith('/api/vaults/work-notes/files', expect.objectContaining({
+    method: 'POST',
+    body: JSON.stringify({ path: 'draft.md', content: '' })
+  }));
+
+  fireEvent.click(screen.getByRole('button', { name: 'Создать папку' }));
+  expect(await screen.findByRole('button', { name: 'docs' })).toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledWith('/api/vaults/work-notes/dirs', expect.objectContaining({
+    method: 'POST',
+    body: JSON.stringify({ path: 'docs' })
+  }));
+
+  fireEvent.click(screen.getByRole('button', { name: 'Удалить файл: draft.md' }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/vaults/work-notes/files?path=draft.md', expect.objectContaining({ method: 'DELETE' })));
 
   fireEvent.click(screen.getByRole('tab', { name: 'Исходник' }));
   expect((await screen.findAllByLabelText('Markdown-редактор')).length).toBeGreaterThanOrEqual(1);
