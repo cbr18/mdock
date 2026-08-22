@@ -366,6 +366,22 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	if lockedWrite.Code != http.StatusLocked {
 		t.Fatalf("locked write status = %d body=%s", lockedWrite.Code, lockedWrite.Body.String())
 	}
+	lockedMoveOtherBody, _ := json.Marshal(map[string]string{"from_path": "web/editor.md", "to_path": "web/blocked-other.md"})
+	lockedMoveOther := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPatch, "/api/vaults/work-notes/files/move", bytes.NewReader(lockedMoveOtherBody))
+	addSessionAuth(req, secondAliceCookies)
+	srv.Handler().ServeHTTP(lockedMoveOther, req)
+	if lockedMoveOther.Code != http.StatusLocked {
+		t.Fatalf("locked move by other status = %d body=%s", lockedMoveOther.Code, lockedMoveOther.Body.String())
+	}
+	lockedMoveOwnerBody, _ := json.Marshal(map[string]string{"from_path": "web/editor.md", "to_path": "web/blocked-owner.md"})
+	lockedMoveOwner := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPatch, "/api/vaults/work-notes/files/move", bytes.NewReader(lockedMoveOwnerBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(lockedMoveOwner, req)
+	if lockedMoveOwner.Code != http.StatusLocked {
+		t.Fatalf("locked move by owner status = %d body=%s", lockedMoveOwner.Code, lockedMoveOwner.Body.String())
+	}
 	allowedWrite := httptest.NewRecorder()
 	body, _ = json.Marshal(map[string]string{"path": "web/editor.md", "content": "updated by owner"})
 	req = httptest.NewRequest(http.MethodPut, "/api/vaults/work-notes/files/content", bytes.NewReader(body))
@@ -380,6 +396,59 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	srv.Handler().ServeHTTP(releaseLock, req)
 	if releaseLock.Code != http.StatusOK {
 		t.Fatalf("release lock status = %d body=%s", releaseLock.Code, releaseLock.Body.String())
+	}
+	nestedDirBody, _ := json.Marshal(map[string]string{"path": "web/locked-dir"})
+	nestedDir := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/dirs", bytes.NewReader(nestedDirBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(nestedDir, req)
+	if nestedDir.Code != http.StatusCreated {
+		t.Fatalf("create nested dir status = %d body=%s", nestedDir.Code, nestedDir.Body.String())
+	}
+	nestedFileBody, _ := json.Marshal(map[string]string{"path": "web/locked-dir/child.md", "content": "nested"})
+	nestedFile := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/files", bytes.NewReader(nestedFileBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(nestedFile, req)
+	if nestedFile.Code != http.StatusCreated {
+		t.Fatalf("create nested file status = %d body=%s", nestedFile.Code, nestedFile.Body.String())
+	}
+	nestedLockBody, _ := json.Marshal(map[string]string{"path": "web/locked-dir/child.md"})
+	nestedLock := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/locks", bytes.NewReader(nestedLockBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(nestedLock, req)
+	if nestedLock.Code != http.StatusOK {
+		t.Fatalf("lock nested file status = %d body=%s", nestedLock.Code, nestedLock.Body.String())
+	}
+	lockedFolderMoveBody, _ := json.Marshal(map[string]string{"from_path": "web/locked-dir", "to_path": "web/locked-dir-moved"})
+	lockedFolderMove := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPatch, "/api/vaults/work-notes/files/move", bytes.NewReader(lockedFolderMoveBody))
+	addSessionAuth(req, secondAliceCookies)
+	srv.Handler().ServeHTTP(lockedFolderMove, req)
+	if lockedFolderMove.Code != http.StatusLocked {
+		t.Fatalf("locked folder move status = %d body=%s", lockedFolderMove.Code, lockedFolderMove.Body.String())
+	}
+	releaseNestedLock := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/api/vaults/work-notes/locks?path=web/locked-dir/child.md", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(releaseNestedLock, req)
+	if releaseNestedLock.Code != http.StatusOK {
+		t.Fatalf("release nested lock status = %d body=%s", releaseNestedLock.Code, releaseNestedLock.Body.String())
+	}
+	moveFolder := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPatch, "/api/vaults/work-notes/files/move", bytes.NewReader(lockedFolderMoveBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(moveFolder, req)
+	if moveFolder.Code != http.StatusOK {
+		t.Fatalf("move unlocked folder status = %d body=%s", moveFolder.Code, moveFolder.Body.String())
+	}
+	deleteMovedFolder := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/api/vaults/work-notes/files?path=web/locked-dir-moved", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(deleteMovedFolder, req)
+	if deleteMovedFolder.Code != http.StatusOK {
+		t.Fatalf("delete moved folder status = %d body=%s", deleteMovedFolder.Code, deleteMovedFolder.Body.String())
 	}
 	moveBody, _ := json.Marshal(map[string]string{"from_path": "web/editor.md", "to_path": "web/moved.md"})
 	moveFile := httptest.NewRecorder()

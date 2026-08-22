@@ -88,6 +88,43 @@ func (s *Service) Get(ctx context.Context, vaultID int64, path string) (Lock, bo
 	return item, true, nil
 }
 
+func (s *Service) ActiveUnder(ctx context.Context, vaultID int64, path string) ([]Lock, error) {
+	now := s.now().UTC()
+	if _, err := s.CleanupExpired(ctx, now); err != nil {
+		return nil, err
+	}
+	prefix := path + "/"
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT vault_id, path, owner, source, expires_at
+		FROM file_locks
+		WHERE vault_id = ? AND (path = ? OR substr(path, 1, ?) = ?)
+		ORDER BY path
+	`, vaultID, path, len(prefix), prefix)
+	if err != nil {
+		return nil, fmt.Errorf("select locks under path: %w", err)
+	}
+	defer rows.Close()
+
+	var items []Lock
+	for rows.Next() {
+		var item Lock
+		var expiresRaw string
+		if err := rows.Scan(&item.VaultID, &item.Path, &item.Owner, &item.Source, &expiresRaw); err != nil {
+			return nil, fmt.Errorf("scan lock under path: %w", err)
+		}
+		expiresAt, err := time.Parse(time.RFC3339Nano, expiresRaw)
+		if err != nil {
+			return nil, fmt.Errorf("parse lock expiry: %w", err)
+		}
+		item.ExpiresAt = expiresAt
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate locks under path: %w", err)
+	}
+	return items, nil
+}
+
 func (s *Service) Heartbeat(ctx context.Context, vaultID int64, path, owner string, ttl time.Duration) error {
 	now := s.now().UTC()
 	expiresAt := now.Add(ttl)

@@ -541,6 +541,13 @@ func (s *Service) MovePath(ctx context.Context, userID int64, vaultSlug, fromPat
 	if _, err := s.vaultService.Stat(item.Path, to); err == nil {
 		return store.Vault{}, ErrInvalidFilePath
 	}
+	info, err := s.vaultService.Stat(item.Path, from)
+	if err != nil {
+		return store.Vault{}, err
+	}
+	if err := s.ensureMoveUnlocked(ctx, item, from, info.IsDir); err != nil {
+		return store.Vault{}, err
+	}
 	if err := s.withFileMutationLock(ctx, item, from, owner, func() error {
 		return s.vaultService.Rename(item.Path, from, to)
 	}); err != nil {
@@ -550,6 +557,25 @@ func (s *Service) MovePath(ctx context.Context, userID int64, vaultSlug, fromPat
 		return store.Vault{}, err
 	}
 	return item, nil
+}
+
+func (s *Service) ensureMoveUnlocked(ctx context.Context, item store.Vault, rel string, isDir bool) error {
+	if !isDir {
+		if _, ok, err := s.lockService.Get(ctx, item.ID, rel); err != nil {
+			return err
+		} else if ok {
+			return locks.ErrLocked
+		}
+		return nil
+	}
+	items, err := s.lockService.ActiveUnder(ctx, item.ID, rel)
+	if err != nil {
+		return err
+	}
+	if len(items) > 0 {
+		return locks.ErrLocked
+	}
+	return nil
 }
 
 func (s *Service) DeletePath(ctx context.Context, userID int64, vaultSlug, relPath, owner string) (store.Vault, error) {
