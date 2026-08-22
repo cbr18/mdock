@@ -92,7 +92,9 @@ Prod deploy pipeline:
 - подключается к серверу по SSH;
 - не использует внешние marketplace actions для SSH, чтобы Forgejo runner не зависел от зеркал `data.forgejo.org`;
 - проверяет `PROD_SSH_FINGERPRINT` перед подключением;
-- делает `git fetch`, `checkout main`, `pull --ff-only`;
+- создаёт `PROD_APP_DIR`, если папки нет;
+- если в `PROD_APP_DIR` ещё нет `.git`, инициализирует checkout из `PROD_REPO_SSH_URL`;
+- делает `git fetch origin main`, `checkout -B main origin/main`, `pull --ff-only`;
 - запускает `./scripts/deploy-prod.sh`;
 - deploy script делает build/pull, SQL backup, `docker compose up -d --remove-orphans`;
 - SQL backup создаётся перед обновлением production stack.
@@ -106,6 +108,7 @@ PROD_SSH_USER
 PROD_SSH_KEY
 PROD_SSH_FINGERPRINT
 PROD_APP_DIR
+PROD_REPO_SSH_URL
 ```
 
 Секреты и реальные production URLs в репозиторий не кладём.
