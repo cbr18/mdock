@@ -90,6 +90,8 @@ Docker/Compose smoke проверки не входят в Forgejo test job, п�
 Prod deploy pipeline:
 
 - подключается к серверу по SSH;
+- не использует внешние marketplace actions для SSH, чтобы Forgejo runner не зависел от зеркал `data.forgejo.org`;
+- проверяет `PROD_SSH_FINGERPRINT` перед подключением;
 - делает `git fetch`, `checkout main`, `pull --ff-only`;
 - запускает `./scripts/deploy-prod.sh`;
 - deploy script делает build/pull, SQL backup, `docker compose up -d --remove-orphans`;
