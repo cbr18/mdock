@@ -59,29 +59,38 @@ Deploy script запускает SQL backup перед обновлением co
 
 ## Pipelines
 
-В репозитории есть одинаковые workflow-файлы для GitHub Actions и Forgejo Actions:
+CI/CD проекта работает через Forgejo Actions. GitHub Actions workflow-файлы в репозитории не поддерживаются, чтобы не было второго источника деплоя.
 
-- `.github/workflows/test.yml`
-- `.github/workflows/prod-deploy.yml`
 - `.forgejo/workflows/test.yml`
 - `.forgejo/workflows/prod-deploy.yml`
 
-Test pipeline:
+Branch policy:
+
+- push в любую ветку, кроме `main`, запускает только `.forgejo/workflows/test.yml`;
+- push в `main` запускает `.forgejo/workflows/prod-deploy.yml`;
+- prod workflow сначала выполняет тот же тестовый набор, и только после успешных проверок запускает SSH deploy;
+- `workflow_dispatch` оставлен для ручного запуска.
+
+Test pipeline и pre-deploy CI:
 
 - `go test ./...`
 - `go build -mod=vendor -buildvcs=false ./cmd/mdock`
 - `npm ci`
-- `npm test -- --runInBand`
+- `npm test`
 - `npm run build`
 - `docker compose config`
-- `docker compose --env-file test/.env.test.example -f test/docker-compose.yml config`
+- `docker compose --env-file .env.test.example config` из папки `test/`
+- `docker compose up -d --build` из папки `test/`
+- `./test/run-smoke.sh`
+- `docker compose down -v` из папки `test/`
 
 Prod deploy pipeline:
 
 - подключается к серверу по SSH;
 - делает `git fetch`, `checkout main`, `pull --ff-only`;
 - запускает `./scripts/deploy-prod.sh`;
-- deploy script делает build/pull, SQL backup, `docker compose up -d --remove-orphans`.
+- deploy script делает build/pull, SQL backup, `docker compose up -d --remove-orphans`;
+- SQL backup создаётся перед обновлением production stack.
 
 Нужные secrets:
 
@@ -90,6 +99,7 @@ PROD_SSH_HOST
 PROD_SSH_PORT
 PROD_SSH_USER
 PROD_SSH_KEY
+PROD_SSH_FINGERPRINT
 PROD_APP_DIR
 ```
 

@@ -1,29 +1,71 @@
-name: test
+name: Test
 
 on:
   push:
+    branches-ignore:
+      - main
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.26'
-      - uses: actions/setup-node@v4
+
+      - name: Test backend
+        run: go test ./...
+
+      - name: Build backend
+        run: go build -mod=vendor -buildvcs=false ./cmd/mdock
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: go test ./...
-      - run: go build -mod=vendor -buildvcs=false ./cmd/mdock
-      - run: npm ci
+
+      - name: Install frontend dependencies
+        run: npm ci
         working-directory: web
-      - run: npm test -- --runInBand
+
+      - name: Test frontend
+        run: npm test
         working-directory: web
-      - run: npm run build
+
+      - name: Build frontend
+        run: npm run build
         working-directory: web
-      - run: docker compose config
-      - run: docker compose --env-file test/.env.test.example -f test/docker-compose.yml config
+
+      - name: Validate production compose
+        run: docker compose config
+
+      - name: Validate test compose
+        run: docker compose --env-file .env.test.example config
+        working-directory: test
+
+      - name: Start test stack
+        run: docker compose up -d --build
+        working-directory: test
+
+      - name: Run smoke tests
+        run: ./test/run-smoke.sh
+
+      - name: Stop test stack
+        if: always()
+        run: docker compose down -v
+        working-directory: test
