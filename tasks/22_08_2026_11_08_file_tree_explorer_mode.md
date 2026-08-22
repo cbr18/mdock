@@ -70,6 +70,7 @@ Plan: [22_08_2026_11_08_file_tree_explorer_mode.md](../plans/22_08_2026_11_08_fi
 
 ## Результаты валидации
 
+- Commit: `60a722e`
 - `npm test` из `web/`: 3 test files passed, 22 tests passed.
 - `npm run build` из `web/`: production frontend build passed.
 - `go test ./...`: passed.
