@@ -114,7 +114,7 @@ PROD_APP_DIR
 
 Секреты и реальные production URLs в репозиторий не кладём.
 
-Production checkout инициализируется из `ssh://kotyonki.su:2288/cbr/mdock.git`; это не secret.
+Production checkout инициализируется из `ssh://git@kotyonki.su:2288/cbr/mdock.git`; это не secret.
 
 ## HTTPS
 

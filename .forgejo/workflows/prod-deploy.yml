@@ -63,7 +63,7 @@ jobs:
           PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
           PROD_SSH_FINGERPRINT: ${{ secrets.PROD_SSH_FINGERPRINT }}
           PROD_APP_DIR: ${{ secrets.PROD_APP_DIR }}
-          PROD_REPO_SSH_URL: ssh://kotyonki.su:2288/cbr/mdock.git
+          PROD_REPO_SSH_URL: ssh://git@kotyonki.su:2288/cbr/mdock.git
           PROD_REPO_SSH_HOST: kotyonki.su
           PROD_REPO_SSH_PORT: "2288"
         run: |
