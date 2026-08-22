@@ -1,6 +1,6 @@
-import { ChevronDown, ChevronLeft, ChevronRight, Code2, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, PanelLeftClose, PanelLeftOpen, Rows2, Save, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Code2, FileInput, FilePlus2, FileText, Folder, FolderInput, FolderOpen, FolderPlus, PanelLeftClose, PanelLeftOpen, Rows2, Save, Trash2 } from 'lucide-react';
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { createDirectory, createFile, deletePath, listFiles, readFileContent } from '../../api/files.js';
+import { createDirectory, createFile, deletePath, listFiles, movePath, readFileContent } from '../../api/files.js';
 import { StatusMessage } from '../../components/ui/StatusMessage.jsx';
 import { createFileEditorSession } from '../editor/fileEditorSession.js';
 import { useLanguage } from '../i18n/LanguageProvider.jsx';
@@ -15,6 +15,9 @@ export function VaultFilesPanel({ slug }) {
   const [treeEntries, setTreeEntries] = useState({});
   const [expandedPaths, setExpandedPaths] = useState(() => new Set(['.']));
   const [loadingPaths, setLoadingPaths] = useState(() => new Set());
+  const [draggedEntry, setDraggedEntry] = useState(null);
+  const [dropTargetPath, setDropTargetPath] = useState('');
+  const [pendingMoveEntry, setPendingMoveEntry] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [content, setContent] = useState('');
   const [savedContent, setSavedContent] = useState('');
@@ -302,6 +305,116 @@ export function VaultFilesPanel({ slug }) {
     }
   }
 
+  async function handleMoveEntry(entry, targetDirectory) {
+    const targetPath = joinPath(targetDirectory, entry.name);
+    if (entry.path === targetPath) {
+      setMessage(t('moveNoop'));
+      return;
+    }
+    if (entry.is_dir && (targetDirectory === entry.path || targetDirectory.startsWith(`${entry.path}/`))) {
+      setMessage(t('moveForbidden'));
+      return;
+    }
+    const sourceDirectory = parentPathFor(entry.path);
+    try {
+      await movePath(slug, entry.path, targetPath);
+      const directoriesToReload = new Set([sourceDirectory, targetDirectory || '.']);
+      for (const directoryPath of directoriesToReload) {
+        await loadDirectory(directoryPath || '.', { force: true });
+      }
+      if (entry.is_dir) {
+        moveCachedDirectory(entry.path, targetPath);
+        setExpandedPaths((current) => {
+          const next = new Set();
+          for (const expandedPath of current) {
+            if (expandedPath === entry.path) {
+              next.add(targetPath);
+            } else if (expandedPath.startsWith(`${entry.path}/`)) {
+              next.add(`${targetPath}${expandedPath.slice(entry.path.length)}`);
+            } else {
+              next.add(expandedPath);
+            }
+          }
+          return next;
+        });
+      }
+      if (selectedFile?.path === entry.path || selectedFile?.path.startsWith(`${entry.path}/`)) {
+        const nextSelectedPath = selectedFile.path === entry.path
+          ? targetPath
+          : `${targetPath}${selectedFile.path.slice(entry.path.length)}`;
+        setSelectedFile((current) => current ? { ...current, path: nextSelectedPath } : current);
+        if (sessionRef.current) {
+          await closeEditorSession();
+          setEditing(false);
+        }
+      }
+      setPath(targetDirectory || '.');
+      if (targetDirectory && targetDirectory !== '.') {
+        setExpandedPaths((current) => new Set(current).add(targetDirectory));
+      }
+      setPendingMoveEntry(null);
+      setMessage(t('moveDone'));
+    } catch {
+      setMessage(t('moveFailed'));
+    }
+  }
+
+  function moveCachedDirectory(fromPath, toPath) {
+    setTreeEntries((current) => {
+      const next = { ...current };
+      for (const directoryPath of Object.keys(current)) {
+        if (directoryPath === fromPath || directoryPath.startsWith(`${fromPath}/`)) {
+          const movedPath = directoryPath === fromPath ? toPath : `${toPath}${directoryPath.slice(fromPath.length)}`;
+          next[movedPath] = current[directoryPath].map((entry) => moveEntryPath(entry, fromPath, toPath));
+          delete next[directoryPath];
+        }
+      }
+      return next;
+    });
+  }
+
+  function handleDragStart(event, entry) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', entry.path);
+    setDraggedEntry(entry);
+    setPendingMoveEntry(null);
+  }
+
+  function handleDragEnd() {
+    setDraggedEntry(null);
+    setDropTargetPath('');
+  }
+
+  function handleDragOver(event, targetDirectory) {
+    if (!draggedEntry || !canMoveToDirectory(draggedEntry, targetDirectory)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDropTargetPath(targetDirectory || '.');
+  }
+
+  function handleDragLeave(event, targetDirectory) {
+    if (!event.currentTarget.contains(event.relatedTarget)) {
+      setDropTargetPath((current) => current === (targetDirectory || '.') ? '' : current);
+    }
+  }
+
+  async function handleDrop(event, targetDirectory) {
+    if (!draggedEntry || !canMoveToDirectory(draggedEntry, targetDirectory)) return;
+    event.preventDefault();
+    setDropTargetPath('');
+    const entry = draggedEntry;
+    setDraggedEntry(null);
+    await handleMoveEntry(entry, targetDirectory || '.');
+  }
+
+  function canMoveToDirectory(entry, targetDirectory) {
+    const target = targetDirectory || '.';
+    const targetPath = joinPath(target, entry.name);
+    if (entry.path === targetPath) return false;
+    if (entry.is_dir && (target === entry.path || target.startsWith(`${entry.path}/`))) return false;
+    return true;
+  }
+
   async function toggleDirectory(entry) {
     setPath(entry.path);
     if (expandedPaths.has(entry.path)) {
@@ -330,9 +443,20 @@ export function VaultFilesPanel({ slug }) {
       const loading = loadingPaths.has(entry.path);
       const childrenLoaded = Boolean(treeEntries[entry.path]);
       const children = treeEntries[entry.path] || [];
+      const canDropHere = draggedEntry && entry.is_dir && canMoveToDirectory(draggedEntry, entry.path);
+      const canMoveHere = pendingMoveEntry && entry.is_dir && canMoveToDirectory(pendingMoveEntry, entry.path);
       return (
         <div key={entry.path} className="file-tree-node">
-          <div className={`file-row ${selectedFile?.path === entry.path ? 'active' : ''}`} style={{ '--tree-level': level }}>
+          <div
+            className={`file-row ${selectedFile?.path === entry.path ? 'active' : ''} ${dropTargetPath === entry.path ? 'drop-target' : ''} ${draggedEntry?.path === entry.path ? 'dragging' : ''}`}
+            draggable
+            onDragStart={(event) => handleDragStart(event, entry)}
+            onDragEnd={handleDragEnd}
+            onDragOver={entry.is_dir ? (event) => handleDragOver(event, entry.path) : undefined}
+            onDragLeave={entry.is_dir ? (event) => handleDragLeave(event, entry.path) : undefined}
+            onDrop={entry.is_dir ? (event) => handleDrop(event, entry.path) : undefined}
+            style={{ '--tree-level': level }}
+          >
             {entry.is_dir ? (
               <button
                 type="button"
@@ -362,14 +486,25 @@ export function VaultFilesPanel({ slug }) {
                     <FolderPlus size={15} aria-hidden="true" />
                     <span className="sr-only">{t('createFolderInFolder')}</span>
                   </button>
+                  {canMoveHere ? (
+                    <button type="button" className="icon-button" onClick={() => handleMoveEntry(pendingMoveEntry, entry.path)} title={`${t('moveHere')}: ${entry.name}`}>
+                      <FolderInput size={15} aria-hidden="true" />
+                      <span className="sr-only">{t('moveHere')}: {entry.name}</span>
+                    </button>
+                  ) : null}
                 </>
               ) : null}
+              <button type="button" className="icon-button" onClick={() => setPendingMoveEntry(entry)} title={t('moveEntry')}>
+                <FileInput size={15} aria-hidden="true" />
+                <span className="sr-only">{t('moveEntry')}: {entry.name}</span>
+              </button>
               <button type="button" className="icon-button danger-icon-button" onClick={() => handleDeleteEntry(entry)} title={`${entry.is_dir ? t('deleteFolder') : t('deleteFile')}: ${entry.name}`}>
                 <Trash2 size={15} aria-hidden="true" />
                 <span className="sr-only">{entry.is_dir ? t('deleteFolder') : t('deleteFile')}: {entry.name}</span>
               </button>
             </span>
           </div>
+          {canDropHere ? <span className="sr-only">{t('dropAllowed')}</span> : null}
           {entry.is_dir && expanded ? (
             <div className="file-tree-children">
               {loading && !childrenLoaded ? <p className="muted file-tree-loading">{t('loading')}</p> : renderTreeEntries(entry.path, level + 1)}
@@ -420,7 +555,12 @@ export function VaultFilesPanel({ slug }) {
       <StatusMessage className="page-status">{message}</StatusMessage>
       <div className={`files-layout ${filesCollapsed ? 'files-layout-collapsed' : ''}`}>
         <section className="file-list-pane" aria-label={t('files')}>
-          <div className="file-pathbar">
+          <div
+            className={`file-pathbar ${dropTargetPath === (path || '.') ? 'drop-target' : ''}`}
+            onDragOver={(event) => handleDragOver(event, path || '.')}
+            onDragLeave={(event) => handleDragLeave(event, path || '.')}
+            onDrop={(event) => handleDrop(event, path || '.')}
+          >
             <button type="button" className="icon-button" onClick={() => setPath(parentPath)} disabled={path === '.'}>
               <ChevronLeft size={16} aria-hidden="true" />
               <span className="sr-only">{t('parentFolder')}</span>
@@ -434,7 +574,19 @@ export function VaultFilesPanel({ slug }) {
               <FolderPlus size={16} aria-hidden="true" />
               <span className="sr-only">{t('createFolder')}</span>
             </button>
+            {pendingMoveEntry && canMoveToDirectory(pendingMoveEntry, path || '.') ? (
+              <button type="button" className="icon-button" onClick={() => handleMoveEntry(pendingMoveEntry, path || '.')} title={`${t('moveHere')}: ${path === '.' ? '/' : path}`}>
+                <FolderInput size={16} aria-hidden="true" />
+                <span className="sr-only">{t('moveHere')}: {path === '.' ? '/' : path}</span>
+              </button>
+            ) : null}
           </div>
+          {pendingMoveEntry ? (
+            <div className="pending-move-bar" role="status">
+              <span>{t('movingEntry')}: {pendingMoveEntry.name}</span>
+              <button type="button" className="secondary-button" onClick={() => setPendingMoveEntry(null)}>{t('cancel')}</button>
+            </div>
+          ) : null}
           <div className="file-list">
             {renderTreeEntries('.')}
           </div>
@@ -544,6 +696,16 @@ function parentPathFor(entryPath) {
   const parts = entryPath.split('/').filter(Boolean);
   parts.pop();
   return parts.length ? parts.join('/') : '.';
+}
+
+function moveEntryPath(entry, fromPath, toPath) {
+  if (entry.path === fromPath) {
+    return { ...entry, path: toPath, name: toPath.split('/').filter(Boolean).pop() || entry.name };
+  }
+  if (entry.path.startsWith(`${fromPath}/`)) {
+    return { ...entry, path: `${toPath}${entry.path.slice(fromPath.length)}` };
+  }
+  return entry;
 }
 
 function readExpandedPaths(slug) {
