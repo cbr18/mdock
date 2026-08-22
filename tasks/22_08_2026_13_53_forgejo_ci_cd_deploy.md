@@ -71,6 +71,7 @@ Plan: [22_08_2026_13_53_forgejo_ci_cd_deploy.md](../plans/22_08_2026_13_53_forge
 
 ## Результаты валидации
 
+- Commit: `2f926cd`
 - `go test ./...` — успешно.
 - `npm test` в `web/` — успешно, 4 файла тестов, 26 тестов.
 - `npm run build` в `web/` — успешно.
