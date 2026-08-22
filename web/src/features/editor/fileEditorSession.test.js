@@ -7,6 +7,7 @@ function createAPI(overrides = {}) {
     heartbeatFileLock: vi.fn().mockResolvedValue({}),
     readFileContent: vi.fn().mockResolvedValue({ content: '# Note' }),
     releaseFileLock: vi.fn().mockResolvedValue({}),
+    releaseFileLockKeepalive: vi.fn(),
     writeFileContent: vi.fn().mockResolvedValue({ file: { path: 'note.md' } }),
     ...overrides
   };
@@ -28,6 +29,23 @@ describe('file editor session', () => {
     expect(timers.clearInterval).toHaveBeenCalledWith(1);
     expect(api.releaseFileLock).toHaveBeenCalledWith('vault', 'note.md', 'tab-a');
     expect(session.isOpen()).toBe(false);
+  });
+
+  test('uses keepalive release for pagehide without async release', async () => {
+    const api = createAPI();
+    const timers = { setInterval: vi.fn(() => 1), clearInterval: vi.fn() };
+    const session = createFileEditorSession({ slug: 'vault', path: 'note.md', api, timers, owner: 'tab-a' });
+
+    await session.open();
+    session.releaseForPageHide();
+
+    expect(timers.clearInterval).toHaveBeenCalledWith(1);
+    expect(api.releaseFileLockKeepalive).toHaveBeenCalledWith('vault', 'note.md', 'tab-a');
+    expect(api.releaseFileLock).not.toHaveBeenCalled();
+    expect(session.isOpen()).toBe(false);
+
+    await session.close();
+    expect(api.releaseFileLock).not.toHaveBeenCalled();
   });
 
   test('releases lock when read after lock fails', async () => {

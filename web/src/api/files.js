@@ -63,3 +63,26 @@ export function releaseFileLock(slug, path, owner = '') {
     method: 'DELETE'
   });
 }
+
+export function releaseFileLockKeepalive(slug, path, owner = '') {
+  const params = new URLSearchParams({ path });
+  if (owner) params.set('owner', owner);
+  const csrfToken = getCookie('mdock_csrf');
+  fetch(`/api/vaults/${encodeURIComponent(slug)}/locks?${params.toString()}`, {
+    method: 'DELETE',
+    credentials: 'same-origin',
+    keepalive: true,
+    headers: {
+      ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
+    }
+  }).catch(() => null);
+}
+
+function getCookie(name) {
+  return document.cookie
+    .split('; ')
+    .find((row) => row.startsWith(`${name}=`))
+    ?.split('=')
+    .slice(1)
+    .join('=') || '';
+}
