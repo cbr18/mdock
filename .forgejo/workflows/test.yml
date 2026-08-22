@@ -21,17 +21,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.26'
-
-      - name: Test backend
-        run: go test ./...
-
-      - name: Build backend
-        run: go build -mod=vendor -buildvcs=false ./cmd/mdock
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -50,6 +39,17 @@ jobs:
       - name: Build frontend
         run: npm run build
         working-directory: web
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Test backend
+        run: go test ./...
+
+      - name: Build backend
+        run: go build -mod=vendor -buildvcs=false ./cmd/mdock
 
       - name: Validate production compose
         run: docker compose config
