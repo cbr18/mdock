@@ -63,6 +63,7 @@ jobs:
           PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
           PROD_SSH_FINGERPRINT: ${{ secrets.PROD_SSH_FINGERPRINT }}
           PROD_APP_DIR: ${{ secrets.PROD_APP_DIR }}
+          PROD_REPO_SSH_URL: ssh://kotyonki.su:2288/cbr/mdock.git
         run: |
           set -euo pipefail
 
@@ -108,12 +109,21 @@ jobs:
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
             "$PROD_SSH_USER@$PROD_SSH_HOST" \
-            "PROD_APP_DIR=$(printf '%q' "$PROD_APP_DIR") bash -s" <<'REMOTE'
+            "PROD_APP_DIR=$(printf '%q' "$PROD_APP_DIR") PROD_REPO_SSH_URL=$(printf '%q' "$PROD_REPO_SSH_URL") bash -s" <<'REMOTE'
             set -euo pipefail
 
+            mkdir -p "$PROD_APP_DIR"
             cd "$PROD_APP_DIR"
-            git fetch --all --prune
-            git checkout main
+
+            if [ ! -d .git ]; then
+              git init
+              git remote add origin "$PROD_REPO_SSH_URL"
+            else
+              git remote set-url origin "$PROD_REPO_SSH_URL"
+            fi
+
+            git fetch --prune origin main
+            git checkout -B main origin/main
             git pull --ff-only
             ./scripts/deploy-prod.sh
           REMOTE
