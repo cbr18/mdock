@@ -17,7 +17,8 @@ export function livePreviewExtension({ frontmatterLabel = 'Frontmatter' } = {}) 
       if (activeBlock && transaction.docChanged) {
         activeBlock = {
           from: transaction.changes.mapPos(activeBlock.from),
-          to: transaction.changes.mapPos(activeBlock.to)
+          to: transaction.changes.mapPos(activeBlock.to),
+          sourceTo: transaction.changes.mapPos(activeBlock.sourceTo ?? activeBlock.to)
         };
       }
 
@@ -25,10 +26,6 @@ export function livePreviewExtension({ frontmatterLabel = 'Frontmatter' } = {}) 
         if (effect.is(setActiveBlock)) {
           activeBlock = effect.value;
         }
-      }
-
-      if (activeBlock && transaction.selection && !selectionIntersectsBlock(transaction.state, activeBlock)) {
-        activeBlock = null;
       }
 
       if (!transaction.docChanged && !transaction.selection && transaction.effects.length === 0) {
@@ -141,15 +138,7 @@ function activeBlockLineDecorations(state, block) {
 }
 
 function isActiveBlock(block, activeBlock) {
-  return activeBlock && rangesIntersect(block.from, block.to, activeBlock.from, activeBlock.to);
-}
-
-function selectionIntersectsBlock(state, block) {
-  return state.selection.ranges.some((range) => {
-    const from = state.doc.lineAt(range.from).from;
-    const to = state.doc.lineAt(range.to).to;
-    return rangesIntersect(block.from, block.to, from, to);
-  });
+  return activeBlock && rangesIntersect(block.from, block.sourceTo, activeBlock.from, activeBlock.sourceTo ?? activeBlock.to);
 }
 
 function rangesIntersect(leftFrom, leftTo, rightFrom, rightTo) {
@@ -344,7 +333,7 @@ class RenderedMarkdownBlockWidget extends WidgetType {
       event.preventDefault();
       view.dispatch({
         selection: { anchor: this.block.from },
-        effects: this.setActiveBlock.of({ from: this.block.from, to: this.block.to }),
+        effects: this.setActiveBlock.of(activeBlockRange(this.block)),
         scrollIntoView: true
       });
       view.focus();
@@ -405,7 +394,7 @@ class RenderedMarkdownDocumentWidget extends WidgetType {
       event.preventDefault();
       view.dispatch({
         selection: { anchor: block.from },
-        effects: this.setActiveBlock.of({ from: block.from, to: block.to }),
+        effects: this.setActiveBlock.of(activeBlockRange(block)),
         scrollIntoView: true
       });
       view.focus();
@@ -452,3 +441,12 @@ class RenderedMarkdownDocumentWidget extends WidgetType {
     );
   }
 }
+
+function activeBlockRange(block) {
+  return { from: block.from, to: block.to, sourceTo: block.sourceTo };
+}
+
+export const __livePreviewInternals = {
+  activeBlockRange,
+  splitBlocks
+};
