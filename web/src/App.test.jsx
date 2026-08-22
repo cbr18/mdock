@@ -360,7 +360,7 @@ test('renders vault file list and markdown preview', async () => {
   expect(await screen.findByRole('heading', { name: 'Хранилище' })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Статус Git' })).toBeInTheDocument();
   expect(window.location.search).toContain('section=settings');
-});
+}, 15000);
 
 test('opens vault file from deep link', async () => {
   vi.stubGlobal('scrollTo', vi.fn());

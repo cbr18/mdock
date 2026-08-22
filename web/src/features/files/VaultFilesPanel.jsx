@@ -33,6 +33,15 @@ export function VaultFilesPanel({ slug }) {
   }, []);
 
   useEffect(() => {
+    function handlePageHide(event) {
+      if (event.persisted) return;
+      sessionRef.current?.releaseForPageHide();
+    }
+    window.addEventListener('pagehide', handlePageHide);
+    return () => window.removeEventListener('pagehide', handlePageHide);
+  }, []);
+
+  useEffect(() => {
     if (selectedFile && isMarkdown(selectedFile.name)) {
       loadMarkdownEditor();
     }

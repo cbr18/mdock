@@ -3,6 +3,7 @@ import {
   heartbeatFileLock,
   readFileContent,
   releaseFileLock,
+  releaseFileLockKeepalive,
   writeFileContent
 } from '../../api/files.js';
 
@@ -47,6 +48,13 @@ export function createFileEditorSession({
     await api.releaseFileLock(slug, path, owner).catch(() => null);
   }
 
+  function releaseForPageHide() {
+    stopHeartbeat();
+    if (!opened) return;
+    opened = false;
+    api.releaseFileLockKeepalive(slug, path, owner);
+  }
+
   function startHeartbeat() {
     stopHeartbeat();
     heartbeatID = timers.setInterval(async () => {
@@ -69,6 +77,7 @@ export function createFileEditorSession({
     open,
     save,
     close,
+    releaseForPageHide,
     isOpen: () => opened,
     owner: () => owner
   };
@@ -79,6 +88,7 @@ const defaultFilesAPI = {
   heartbeatFileLock,
   readFileContent,
   releaseFileLock,
+  releaseFileLockKeepalive,
   writeFileContent
 };
 
