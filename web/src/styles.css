@@ -826,6 +826,15 @@ legend {
   white-space: nowrap;
 }
 
+.file-pathbar .icon-button {
+  width: 34px;
+  height: 34px;
+}
+
+.pathbar-nav-button {
+  color: var(--text-muted);
+}
+
 .file-list {
   display: grid;
   align-content: start;

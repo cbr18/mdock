@@ -708,20 +708,20 @@ export function VaultFilesPanel({ slug, defaultFileRoot = 'Obsidian Vault' }) {
             <span className="file-pathbar-current">{path === '.' ? '/' : path}</span>
             {defaultRoot !== '.' ? (
               <>
-                <button type="button" className="icon-text-button compact-path-button" onClick={() => handleOpenDirectory(defaultRoot)}>
+                <button type="button" className="icon-button pathbar-nav-button" onClick={() => handleOpenDirectory(defaultRoot)} title={t('defaultFileRootOpen')}>
                   <FolderOpen size={16} aria-hidden="true" />
-                  {t('defaultFileRootOpen')}
+                  <span className="sr-only">{t('defaultFileRootOpen')}</span>
                 </button>
-                <button type="button" className="icon-text-button compact-path-button" onClick={() => handleOpenDirectory('.')}>
+                <button type="button" className="icon-button pathbar-nav-button" onClick={() => handleOpenDirectory('.')} title={t('openRootFolder')}>
                   <Folder size={16} aria-hidden="true" />
-                  {t('openRootFolder')}
+                  <span className="sr-only">{t('openRootFolder')}</span>
                 </button>
               </>
             ) : null}
             {defaultRootMissing ? (
-              <button type="button" className="icon-text-button compact-path-button" onClick={handleCreateDefaultRoot}>
+              <button type="button" className="icon-button pathbar-nav-button" onClick={handleCreateDefaultRoot} title={t('createDefaultFileRoot')}>
                 <FolderPlus size={16} aria-hidden="true" />
-                {t('createDefaultFileRoot')}
+                <span className="sr-only">{t('createDefaultFileRoot')}</span>
               </button>
             ) : null}
             <button type="button" className="icon-button" onClick={() => handleCreateFile(path)} disabled={!currentDirectoryAvailable} title={t('createFile')}>
