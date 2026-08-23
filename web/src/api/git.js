@@ -8,6 +8,10 @@ export function getCommits(slug, limit = 20) {
   return api(`/api/vaults/${encodeURIComponent(slug)}/git/commits?limit=${encodeURIComponent(limit)}`);
 }
 
+export function getCommitDetails(slug, hash) {
+  return api(`/api/vaults/${encodeURIComponent(slug)}/git/commits/${encodeURIComponent(hash)}`);
+}
+
 export function getRemote(slug) {
   return api(`/api/vaults/${encodeURIComponent(slug)}/git/remote`);
 }

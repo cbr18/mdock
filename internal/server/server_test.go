@@ -587,6 +587,34 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	if !strings.Contains(commits.Body.String(), "sync(web): update") && !strings.Contains(commits.Body.String(), "sync(mixed): update") {
 		t.Fatalf("git commits response missing web commit subject: %s", commits.Body.String())
 	}
+	var commitsResponse struct {
+		Commits []struct {
+			Hash string `json:"hash"`
+		} `json:"commits"`
+	}
+	if err := json.Unmarshal(commits.Body.Bytes(), &commitsResponse); err != nil {
+		t.Fatalf("decode git commits: %v", err)
+	}
+	if len(commitsResponse.Commits) == 0 {
+		t.Fatal("expected at least one git commit")
+	}
+	commitDetails := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/git/commits/"+commitsResponse.Commits[0].Hash, nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(commitDetails, req)
+	if commitDetails.Code != http.StatusOK {
+		t.Fatalf("git commit details code = %d body=%s", commitDetails.Code, commitDetails.Body.String())
+	}
+	if !strings.Contains(commitDetails.Body.String(), `"files"`) || !strings.Contains(commitDetails.Body.String(), `"diff"`) {
+		t.Fatalf("git commit details missing files/diff: %s", commitDetails.Body.String())
+	}
+	badCommitDetails := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/git/commits/not-a-hash", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(badCommitDetails, req)
+	if badCommitDetails.Code != http.StatusNotFound {
+		t.Fatalf("bad git commit details code = %d body=%s", badCommitDetails.Code, badCommitDetails.Body.String())
+	}
 
 	badRemoteBody, _ := json.Marshal(map[string]string{"url": "https://user:token@example.test/repo.git"})
 	badRemote := httptest.NewRecorder()

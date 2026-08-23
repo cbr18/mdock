@@ -1674,6 +1674,95 @@ legend {
   background: var(--bg-subtle);
 }
 
+.git-history-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.commit-row {
+  width: 100%;
+  color: inherit;
+  text-align: left;
+}
+
+.commit-row > span,
+.changed-file-row > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.commit-row small,
+.changed-file-row small,
+.commit-detail-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.commit-row.active {
+  border-color: color-mix(in srgb, var(--accent) 56%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+}
+
+.commit-detail-pane,
+.commit-detail {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.commit-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.changed-file-list {
+  display: grid;
+  gap: 8px;
+}
+
+.changed-file-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.file-status-badge {
+  display: inline-grid;
+  min-width: 34px;
+  min-height: 26px;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  color: var(--text-soft);
+  font-family: var(--mono-font);
+  font-size: 12px;
+}
+
+.git-diff-view {
+  max-height: 420px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre;
+}
+
 .user-row {
   align-items: flex-start;
 }
@@ -1738,8 +1827,21 @@ legend {
   .metric-grid,
   .files-layout,
   .file-info,
+  .git-history-layout,
   .split-document-view {
     grid-template-columns: 1fr;
+  }
+
+  .commit-detail-header {
+    display: grid;
+  }
+
+  .changed-file-row {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .changed-file-row > small {
+    grid-column: 2;
   }
 
   .markdown-preview,

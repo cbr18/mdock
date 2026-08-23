@@ -16,6 +16,7 @@
 - `internal/version.Current` — версия, которая попадает в Go binary;
 - `mdock version` — CLI output;
 - `GET /api/version` — JSON endpoint.
+- `docs/roadmap.md` — порядок будущих функциональных блоков.
 
 `VERSION` и `internal/version.Current` должны совпадать; это проверяется тестом.
 
@@ -81,6 +82,7 @@ Production deploy из `main` и release tag — разные события. М
 8. Выполнить `npm run build`.
 9. Для release candidate выполнить smoke against test stack.
 10. Создать tag `vX.Y.Z`.
+11. Проверить `./scripts/update.sh --check` после публикации tag.
 
 ## CI/CD Policy
 
@@ -89,6 +91,17 @@ Production deploy из `main` и release tag — разные события. М
 - push в ветки кроме `main` запускает test workflow;
 - push в `main` запускает test + production deploy;
 - release tags пока не публикуют artifacts автоматически.
+
+Production server можно обновлять вручную:
+
+```bash
+./scripts/update.sh
+./scripts/update.sh --check
+./scripts/update.sh --apply --target vX.Y.Z
+./scripts/update.sh --apply --branch main
+```
+
+Запуск без аргументов интерактивно предлагает обновиться из latest `main`. `--check` ничего не меняет. `--apply` требует чистое git working tree и запускает `scripts/deploy-prod.sh`, который делает SQL backup перед обновлением Docker Compose stack.
 
 Позже можно добавить отдельный workflow на `push tags: v*`:
 

@@ -231,7 +231,7 @@ export function VaultPage({ slug, onNavigate, onVaultChanged }) {
                 onSave={handleSaveRemote}
                 onPush={handlePushRemote}
               />
-              <CommitList commits={commits} />
+              <CommitList slug={slug} commits={commits} />
             </>
           )}
         </div>

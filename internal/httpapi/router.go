@@ -69,6 +69,7 @@ func (h *Handler) routes() (http.Handler, error) {
 		r.Delete("/api/vaults/{slug}/locks", h.releaseFileLock)
 		r.Get("/api/vaults/{slug}/git/status", h.gitStatus)
 		r.Get("/api/vaults/{slug}/git/commits", h.gitCommits)
+		r.Get("/api/vaults/{slug}/git/commits/{hash}", h.gitCommitDetails)
 		r.Get("/api/vaults/{slug}/git/remote", h.gitRemote)
 		r.Put("/api/vaults/{slug}/git/remote", h.setGitRemote)
 		r.Post("/api/vaults/{slug}/git/push", h.pushGitRemote)

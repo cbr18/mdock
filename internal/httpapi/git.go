@@ -48,6 +48,19 @@ func (h *Handler) gitCommits(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"vault": item, "commits": commits})
 }
 
+func (h *Handler) gitCommitDetails(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
+	slug := chi.URLParam(r, "slug")
+	hash := chi.URLParam(r, "hash")
+	item, details, err := h.app.GitCommitDetails(r.Context(), user.ID, slug, hash)
+	if err != nil {
+		h.logger.Error("git commit details", "error", err, "user_id", user.ID)
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"vault": item, "commit": details})
+}
+
 func (h *Handler) gitRemote(w http.ResponseWriter, r *http.Request) {
 	user := userFromContext(r.Context())
 	item, err := h.app.VaultDetails(r.Context(), user.ID, chi.URLParam(r, "slug"))

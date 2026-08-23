@@ -323,6 +323,36 @@ Lock behavior:
 
 Последние коммиты vault. `limit` ограничивается сервером.
 
+### `GET /api/vaults/{slug}/git/commits/{hash}`
+
+Детали одного коммита: metadata, changed files и unified diff.
+
+Response:
+
+```json
+{
+  "vault": {},
+  "commit": {
+    "hash": "abcdef123456",
+    "subject": "sync(web): update 1 file",
+    "author": "mdock",
+    "created_at": "2026-08-23T00:00:00Z",
+    "files": [
+      {
+        "path": "note.md",
+        "status": "M",
+        "binary": false,
+        "adds": 2,
+        "deletes": 1
+      }
+    ],
+    "diff": "diff --git a/note.md b/note.md\n..."
+  }
+}
+```
+
+`hash` принимает только hex commit hash/prefix. Restore из коммита не входит в текущий API.
+
 ### `GET /api/vaults/{slug}/git/remote`
 
 Возвращает remote metadata: `remote_url`, `last_push_at`, `last_push_error`.

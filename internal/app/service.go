@@ -431,6 +431,18 @@ func (s *Service) GitCommits(ctx context.Context, userID int64, vaultSlug string
 	return item, commits, nil
 }
 
+func (s *Service) GitCommitDetails(ctx context.Context, userID int64, vaultSlug, hash string) (store.Vault, appgit.CommitDetails, error) {
+	item, root, _, err := s.gitContext(ctx, userID, vaultSlug)
+	if err != nil {
+		return store.Vault{}, appgit.CommitDetails{}, err
+	}
+	details, err := s.gitClient.CommitDetails(ctx, root, hash)
+	if err != nil {
+		return store.Vault{}, appgit.CommitDetails{}, err
+	}
+	return item, details, nil
+}
+
 func (s *Service) ListFiles(ctx context.Context, userID int64, vaultSlug, relPath string) (store.Vault, []vault.Entry, error) {
 	item, err := s.store.VaultForUserBySlug(ctx, userID, vaultSlug)
 	if err != nil {

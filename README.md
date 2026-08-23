@@ -99,6 +99,7 @@ GET /api/version
 - Git-модель хранилищ: [docs/git-vaults.md](docs/git-vaults.md)
 - Совместимость Remotely Save: [docs/remotely-save-webdav-compatibility.md](docs/remotely-save-webdav-compatibility.md)
 - Технический стек: [docs/tech-stack.md](docs/tech-stack.md)
+- Roadmap: [docs/roadmap.md](docs/roadmap.md)
 
 ### Проверки
 
@@ -210,6 +211,7 @@ Remote push is manual in the current server API. Future auto-push must run only 
 - Deployment, SQL backups and CI/CD: [docs/deployment.md](docs/deployment.md)
 - Git model for vaults: [docs/git-vaults.md](docs/git-vaults.md)
 - Release strategy: [docs/release-strategy.md](docs/release-strategy.md)
+- Roadmap: [docs/roadmap.md](docs/roadmap.md)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
 
 ## Versioning
@@ -259,6 +261,27 @@ Create a SQL backup of app runtime state:
 ```bash
 ./scripts/backup-sql.sh
 ```
+
+Run an interactive update from the latest `main`:
+
+```bash
+./scripts/update.sh
+```
+
+Check for updates from GitHub tags without changing files:
+
+```bash
+./scripts/update.sh --check
+```
+
+Apply a release tag or branch update:
+
+```bash
+./scripts/update.sh --apply --target v0.1.0-alpha.1
+./scripts/update.sh --apply --branch main
+```
+
+`update.sh --apply` requires a clean git working tree and reuses `scripts/deploy-prod.sh`, so SQL backup runs before the Docker Compose stack is recreated.
 
 ## Test Stack
 

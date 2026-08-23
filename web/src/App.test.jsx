@@ -197,7 +197,30 @@ test('renders vault file list and markdown preview', async () => {
       return response({ dirty: false, queue_len: 0 });
     }
     if (url === '/api/vaults/work-notes/git/commits?limit=20') {
-      return response({ commits: [] });
+      return response({
+        commits: [
+          {
+            hash: 'abcdef1234567890',
+            subject: 'sync(web): update 1 file',
+            author: 'mdock',
+            created_at: '2026-08-15T12:00:00Z'
+          }
+        ]
+      });
+    }
+    if (url === '/api/vaults/work-notes/git/commits/abcdef1234567890') {
+      return response({
+        commit: {
+          hash: 'abcdef1234567890',
+          subject: 'sync(web): update 1 file',
+          author: 'mdock',
+          created_at: '2026-08-15T12:00:00Z',
+          files: [
+            { path: 'note.md', status: 'M', binary: false, adds: 2, deletes: 1 }
+          ],
+          diff: 'diff --git a/note.md b/note.md\n+hello'
+        }
+      });
     }
     if (url === '/api/vaults/work-notes/git/remote') {
       return response({ remote_url: '', last_push_at: '', last_push_error: '' });
@@ -359,6 +382,11 @@ test('renders vault file list and markdown preview', async () => {
   fireEvent.click(screen.getByRole('tab', { name: 'Настройки хранилища' }));
   expect(await screen.findByRole('heading', { name: 'Хранилище' })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Статус Git' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /sync\(web\): update 1 file/ }));
+  expect(await screen.findByLabelText('Изменённые файлы')).toBeInTheDocument();
+  expect(screen.getByText('note.md')).toBeInTheDocument();
+  expect(screen.getByText('+2 -1')).toBeInTheDocument();
+  expect(screen.getByLabelText('Diff коммита')).toHaveTextContent('+hello');
   expect(window.location.search).toContain('section=settings');
 }, 15000);
 

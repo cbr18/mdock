@@ -23,6 +23,21 @@ type CommitInfo struct {
 	CreatedAt string `json:"created_at"`
 }
 
+type ChangedFile struct {
+	Path    string `json:"path"`
+	OldPath string `json:"old_path,omitempty"`
+	Status  string `json:"status"`
+	Binary  bool   `json:"binary"`
+	Adds    int    `json:"adds"`
+	Deletes int    `json:"deletes"`
+}
+
+type CommitDetails struct {
+	CommitInfo
+	Files []ChangedFile `json:"files"`
+	Diff  string        `json:"diff"`
+}
+
 func NewClient(bin string) *Client {
 	if bin == "" {
 		bin = "git"
@@ -90,6 +105,86 @@ func (c *Client) Log(ctx context.Context, repoPath string, limit int) ([]CommitI
 		})
 	}
 	return commits, nil
+}
+
+func (c *Client) CommitDetails(ctx context.Context, repoPath, hash string) (CommitDetails, error) {
+	if !validCommitHash(hash) {
+		return CommitDetails{}, fmt.Errorf("invalid commit hash")
+	}
+	out, err := c.run(ctx, repoPath, "show", "--date=iso-strict", "--format=%H%x1f%an%x1f%aI%x1f%s", "--no-patch", hash)
+	if err != nil {
+		return CommitDetails{}, err
+	}
+	parts := strings.SplitN(strings.TrimSpace(out), "\x1f", 4)
+	if len(parts) != 4 {
+		return CommitDetails{}, fmt.Errorf("parse git show metadata: %q", out)
+	}
+	files, err := c.commitFiles(ctx, repoPath, hash)
+	if err != nil {
+		return CommitDetails{}, err
+	}
+	diff, err := c.run(ctx, repoPath, "show", "--format=", "--patch", "--find-renames", "--no-ext-diff", "--no-color", hash)
+	if err != nil {
+		return CommitDetails{}, err
+	}
+	return CommitDetails{
+		CommitInfo: CommitInfo{
+			Hash:      parts[0],
+			Author:    parts[1],
+			CreatedAt: parts[2],
+			Subject:   parts[3],
+		},
+		Files: files,
+		Diff:  diff,
+	}, nil
+}
+
+func (c *Client) commitFiles(ctx context.Context, repoPath, hash string) ([]ChangedFile, error) {
+	out, err := c.run(ctx, repoPath, "show", "--format=", "--numstat", "--name-status", "--find-renames", hash)
+	if err != nil {
+		return nil, err
+	}
+	stats := map[string]ChangedFile{}
+	statusLines := []string{}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		fields := strings.Split(line, "\t")
+		if len(fields) >= 3 && (isInt(fields[0]) || fields[0] == "-") && (isInt(fields[1]) || fields[1] == "-") {
+			path := fields[len(fields)-1]
+			entry := stats[path]
+			entry.Path = path
+			if fields[0] == "-" || fields[1] == "-" {
+				entry.Binary = true
+			} else {
+				entry.Adds = atoi(fields[0])
+				entry.Deletes = atoi(fields[1])
+			}
+			stats[path] = entry
+			continue
+		}
+		statusLines = append(statusLines, line)
+	}
+	files := make([]ChangedFile, 0, len(statusLines))
+	for _, line := range statusLines {
+		fields := strings.Split(line, "\t")
+		if len(fields) < 2 {
+			continue
+		}
+		status := fields[0]
+		path := fields[len(fields)-1]
+		oldPath := ""
+		if strings.HasPrefix(status, "R") && len(fields) >= 3 {
+			oldPath = fields[1]
+		}
+		entry := stats[path]
+		entry.Path = path
+		entry.OldPath = oldPath
+		entry.Status = status
+		files = append(files, entry)
+	}
+	return files, nil
 }
 
 func (c *Client) Push(ctx context.Context, repoPath, remoteURL string) error {
@@ -165,6 +260,39 @@ func (c *Client) run(ctx context.Context, repoPath string, args ...string) (stri
 		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil
+}
+
+func validCommitHash(hash string) bool {
+	if len(hash) < 7 || len(hash) > 40 {
+		return false
+	}
+	for _, char := range hash {
+		if (char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func isInt(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func atoi(value string) int {
+	result := 0
+	for _, char := range value {
+		result = result*10 + int(char-'0')
+	}
+	return result
 }
 
 type Task struct {
