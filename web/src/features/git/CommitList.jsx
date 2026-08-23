@@ -28,7 +28,7 @@ export function CommitList({ slug, commits }) {
   }
 
   return (
-    <Panel title={t('commits')} icon={<GitCommitVertical size={18} aria-hidden="true" />}>
+    <Panel title={t('commits')} icon={<GitCommitVertical size={18} aria-hidden="true" />} className="git-history-panel">
       <div className="git-history-layout">
         <div className="list-stack commit-list">
           {(commits || []).map((commit) => (
