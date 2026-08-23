@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 GITHUB_REPO_URL="${GITHUB_REPO_URL:-https://github.com/cbr18/mdock.git}"
 FETCH_SOURCE="${FETCH_SOURCE:-$GITHUB_REPO_URL}"
 MODE="apply"
@@ -32,7 +33,7 @@ Notes:
   Running without arguments prompts to update from branch main.
   --check never changes files.
   --apply requires a clean git working tree.
-  A manually copied untracked scripts/update.sh is ignored for first bootstrap update.
+  A manually copied untracked scripts/update*.sh is ignored and moved aside for first bootstrap update.
   --apply reuses scripts/deploy-prod.sh, which creates SQL backup before docker compose up.
 EOF
 }
@@ -127,14 +128,44 @@ is_newer() {
   [[ "$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -n 1)" == "$latest" ]]
 }
 
+script_relpath() {
+  case "$SCRIPT_PATH" in
+    "$ROOT_DIR"/*) printf '%s\n' "${SCRIPT_PATH#"$ROOT_DIR"/}" ;;
+    *) printf '%s\n' "" ;;
+  esac
+}
+
+bootstrap_script_path() {
+  local relpath
+  relpath="$(script_relpath)"
+  [[ "$relpath" == scripts/update*.sh ]] || return 1
+  git ls-files --error-unmatch "$relpath" >/dev/null 2>&1 && return 1
+  [[ -f "$SCRIPT_PATH" ]] || return 1
+  printf '%s\n' "$relpath"
+}
+
 ensure_clean_tree() {
   local status
+  local bootstrap_path
+  bootstrap_path="$(bootstrap_script_path || true)"
   status="$(git status --porcelain)"
-  status="$(printf '%s\n' "$status" | sed '/^?? scripts\/update\.sh$/d')"
+  if [[ -n "$bootstrap_path" ]]; then
+    status="$(printf '%s\n' "$status" | grep -F -v "?? $bootstrap_path" || true)"
+  fi
   if [[ -n "$status" ]]; then
     printf '%s\n' "$status" >&2
     die "working tree is not clean"
   fi
+}
+
+move_bootstrap_script_aside() {
+  local bootstrap_path
+  bootstrap_path="$(bootstrap_script_path || true)"
+  [[ -n "$bootstrap_path" ]] || return
+  local backup_path
+  backup_path="/tmp/mdock-$(basename "$bootstrap_path").bootstrap.$$"
+  log "moving bootstrap script aside: $bootstrap_path -> $backup_path"
+  mv "$SCRIPT_PATH" "$backup_path"
 }
 
 confirm_apply() {
@@ -180,6 +211,7 @@ if [[ -n "$BRANCH" ]]; then
   ensure_clean_tree
   log "fetching $FETCH_SOURCE $BRANCH"
   git fetch "$FETCH_SOURCE" "$BRANCH"
+  move_bootstrap_script_aside
   git checkout -B "$BRANCH" FETCH_HEAD
 elif [[ -n "$TARGET" ]]; then
   ref="$TARGET"
@@ -187,6 +219,7 @@ elif [[ -n "$TARGET" ]]; then
   ensure_clean_tree
   log "fetching tag $TARGET"
   git fetch "$FETCH_SOURCE" "tag" "$TARGET"
+  move_bootstrap_script_aside
   git checkout --detach "$TARGET"
 else
   [[ -n "$latest" ]] || die "no release tags found; use --branch main or --target vX.Y.Z"
@@ -201,6 +234,7 @@ else
   ensure_clean_tree
   log "fetching tag $latest"
   git fetch "$FETCH_SOURCE" "tag" "$latest"
+  move_bootstrap_script_aside
   git checkout --detach "$latest"
 fi
 
