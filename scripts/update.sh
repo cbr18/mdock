@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GITHUB_REPO_URL="${GITHUB_REPO_URL:-https://github.com/cbr18/mdock.git}"
-REMOTE_NAME="${REMOTE_NAME:-origin}"
+FETCH_SOURCE="${FETCH_SOURCE:-$GITHUB_REPO_URL}"
 MODE="apply"
 TARGET=""
 BRANCH=""
@@ -26,12 +26,13 @@ Options:
 
 Env:
   GITHUB_REPO_URL   GitHub repo used for tag discovery. Default: https://github.com/cbr18/mdock.git
-  REMOTE_NAME       Git remote used for fetch/checkout. Default: origin
+  FETCH_SOURCE      Git remote or URL used for fetch/checkout. Default: GITHUB_REPO_URL
 
 Notes:
   Running without arguments prompts to update from branch main.
   --check never changes files.
   --apply requires a clean git working tree.
+  A manually copied untracked scripts/update.sh is ignored for first bootstrap update.
   --apply reuses scripts/deploy-prod.sh, which creates SQL backup before docker compose up.
 EOF
 }
@@ -127,8 +128,11 @@ is_newer() {
 }
 
 ensure_clean_tree() {
-  if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git status --porcelain)" ]]; then
-    git status --short >&2
+  local status
+  status="$(git status --porcelain)"
+  status="$(printf '%s\n' "$status" | sed '/^?? scripts\/update\.sh$/d')"
+  if [[ -n "$status" ]]; then
+    printf '%s\n' "$status" >&2
     die "working tree is not clean"
   fi
 }
@@ -174,16 +178,15 @@ if [[ -n "$BRANCH" ]]; then
   ref="branch $BRANCH"
   confirm_apply "$ref"
   ensure_clean_tree
-  log "fetching $REMOTE_NAME $BRANCH"
-  git fetch "$REMOTE_NAME" "$BRANCH"
+  log "fetching $FETCH_SOURCE $BRANCH"
+  git fetch "$FETCH_SOURCE" "$BRANCH"
   git checkout -B "$BRANCH" FETCH_HEAD
-  git pull --ff-only "$REMOTE_NAME" "$BRANCH"
 elif [[ -n "$TARGET" ]]; then
   ref="$TARGET"
   confirm_apply "$ref"
   ensure_clean_tree
   log "fetching tag $TARGET"
-  git fetch "$REMOTE_NAME" "tag" "$TARGET"
+  git fetch "$FETCH_SOURCE" "tag" "$TARGET"
   git checkout --detach "$TARGET"
 else
   [[ -n "$latest" ]] || die "no release tags found; use --branch main or --target vX.Y.Z"
@@ -197,7 +200,7 @@ else
   confirm_apply "$ref"
   ensure_clean_tree
   log "fetching tag $latest"
-  git fetch "$REMOTE_NAME" "tag" "$latest"
+  git fetch "$FETCH_SOURCE" "tag" "$latest"
   git checkout --detach "$latest"
 fi
 
