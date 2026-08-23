@@ -18,6 +18,7 @@ import (
 	"github.com/cbr/mdock/internal/server"
 	"github.com/cbr/mdock/internal/store"
 	"github.com/cbr/mdock/internal/vault"
+	"github.com/cbr/mdock/internal/version"
 )
 
 func main() {
@@ -26,6 +27,10 @@ func main() {
 
 func run() int {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		fmt.Println(version.Current)
+		return 0
+	}
 	if len(os.Args) > 1 && os.Args[1] == "backup-sql" {
 		return runBackupSQL(logger, os.Args[2:])
 	}

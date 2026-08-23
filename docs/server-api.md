@@ -4,6 +4,18 @@
 
 ## Auth
 
+### `GET /api/version`
+
+Публичный read-only endpoint текущей версии приложения.
+
+Response:
+
+```json
+{
+  "version": "0.1.0-alpha.1"
+}
+```
+
 ### `POST /api/auth/register`
 
 Setup-регистрация первого пользователя.
@@ -139,7 +151,22 @@ Request:
 
 ### `GET /api/vaults/{slug}/webdav`
 
-Возвращает WebDAV path/url для vault.
+Возвращает WebDAV path/url для vault и дефолтную рабочую папку для web UI.
+
+Response:
+
+```json
+{
+  "vault": {},
+  "webdav": {
+    "path": "/webdav/work-notes/",
+    "url": "https://notes.example.test/webdav/work-notes/",
+    "default_file_root": "Obsidian Vault"
+  }
+}
+```
+
+`default_file_root` не меняет WebDAV root: `/webdav/<slug>/` остаётся настоящим корнем. Параметр только говорит web UI, какую папку открыть по умолчанию в файловом дереве. Для открытия настоящего корня в UI используется `/`; для отключения рабочей подпапки в env задаётся `DEFAULT_FILE_ROOT=.`.
 
 ### `GET /api/vaults/{slug}/members`
 

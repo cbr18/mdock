@@ -92,12 +92,14 @@ PRAGMA journal_mode=WAL;
     - `DATA_DIR`;
     - `HTTP_ADDR`;
     - `GIT_BIN`;
+    - `DEFAULT_FILE_ROOT`;
     - `COMMIT_DEBOUNCE`;
     - `LOCK_TTL`;
     - `SESSION_TTL`;
     - `BOOTSTRAP_USERNAME`;
     - `BOOTSTRAP_PASSWORD`.
   - `VAULTS_ROOT` — root-директория для всех vaults, а не путь к vault конкретного пользователя.
+  - `DEFAULT_FILE_ROOT` — папка, которую web UI открывает внутри vault по умолчанию. Значение `.` означает настоящий root vault. WebDAV root остаётся `/webdav/<vault-slug>/`.
 
 - **`github.com/caarlos0/env/v11`** или ручной парсинг env
   - Для MVP можно начать с ручного парсинга, чтобы не добавлять зависимость.
@@ -211,6 +213,7 @@ PRAGMA journal_mode=WAL;
 - В MVP при bootstrap/create user создаётся personal vault и membership `owner`.
 - Shared vaults и управление участниками добавляются позже, но схема не должна требовать переписывания storage/git слоёв.
 - WebDAV в MVP маршрутизируется к vault по `/webdav/<vault-slug>/`, а не к "папке пользователя".
+- Дефолтная рабочая папка web UI задаётся `DEFAULT_FILE_ROOT` и не меняет WebDAV path semantics.
 
 ## Тестирование
 

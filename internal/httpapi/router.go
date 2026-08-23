@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/cbr/mdock/internal/app"
+	"github.com/cbr/mdock/internal/version"
 	appwebdav "github.com/cbr/mdock/internal/webdav"
 	"github.com/cbr/mdock/webdist"
 )
@@ -38,6 +39,7 @@ func (h *Handler) routes() (http.Handler, error) {
 	r.Use(h.requestLogger)
 	r.Get("/healthz", h.health)
 	r.Get("/readyz", h.ready)
+	r.Get("/api/version", h.version)
 	r.With(h.limitAPIBody).Post("/api/auth/register", h.register)
 	r.With(h.limitAPIBody).Post("/api/auth/login", h.login)
 	r.Group(func(r chi.Router) {
@@ -98,6 +100,10 @@ func (h *Handler) routes() (http.Handler, error) {
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"version": version.Current})
 }
 
 func (h *Handler) ready(w http.ResponseWriter, r *http.Request) {

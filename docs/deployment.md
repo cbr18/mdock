@@ -12,6 +12,7 @@ VAULTS_ROOT=/vaults
 DATA_DIR=/data
 BACKUP_DIR=/backups
 GIT_BIN=git
+DEFAULT_FILE_ROOT=Obsidian Vault
 COMMIT_DEBOUNCE=5s
 LOCK_TTL=30s
 SESSION_TTL=24h
@@ -20,6 +21,8 @@ FIRST_ADMIN_TOKEN=<one-time setup token>
 ```
 
 `BOOTSTRAP_USERNAME` и `BOOTSTRAP_PASSWORD` оставлены для dev/test и аварийного bootstrap. В production предпочтительнее не задавать их, открыть приложение и создать первого admin через setup-регистрацию. Если задан `FIRST_ADMIN_TOKEN`, его нужно передать при setup-регистрации.
+
+`DEFAULT_FILE_ROOT` задаёт папку, которую web UI открывает внутри хранилища по умолчанию. WebDAV root при этом остаётся `/webdav/<vault-slug>/`. Значение по умолчанию — `Obsidian Vault`, что совпадает с default `remoteBaseDir || vaultName` у Remotely Save для vault с таким именем. Чтобы web UI открывал настоящий корень хранилища, задайте `DEFAULT_FILE_ROOT=.`.
 
 ## First Admin
 

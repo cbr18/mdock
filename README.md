@@ -2,6 +2,115 @@
 
 Self-hosted markdown vault server: Go backend, React/Vite web UI, SQLite runtime state, local git history and WebDAV access for Obsidian.
 
+## Documentation Language
+
+The root README is the bilingual entry point for setup and operations. Detailed project documents in `docs/`, `tasks/` and `plans/` are currently written in Russian because the product requirements and implementation notes are maintained in Russian.
+
+## Русская Версия
+
+mdock — self-hosted сервер markdown-хранилищ для Obsidian: Go backend, React/Vite web UI, SQLite для runtime-state, локальная git-история и WebDAV-доступ.
+
+Основной сценарий:
+
+- пользователь регистрируется или входит через web UI;
+- создаёт хранилище;
+- подключает Obsidian через WebDAV URL вида `http://<host>/webdav/<vault-slug>/`;
+- использует тот же логин и пароль, что и в web UI;
+- файлы хранилища сохраняются на сервере и коммитятся в локальный git repo.
+
+Для production-доступа через интернет нужен HTTPS перед mdock, например nginx/Caddy/Traefik. Auth остаётся внутри mdock.
+
+### Разработка
+
+Установить зависимости:
+
+```bash
+go mod download
+cd web && npm install
+```
+
+Запустить backend:
+
+```bash
+BOOTSTRAP_USERNAME=admin BOOTSTRAP_PASSWORD=dev-password \
+VAULTS_ROOT=/tmp/mdock-vaults DATA_DIR=/tmp/mdock-data \
+go run ./cmd/mdock
+```
+
+Запустить frontend с hot reload:
+
+```bash
+cd web
+npm run dev
+```
+
+Vite dev server проксирует `/api`, `/healthz` и `/webdav` в Go backend.
+
+### Production Docker
+
+Скопировать `.env.example` в `.env`, задать `FIRST_ADMIN_TOKEN`, если сервис доступен не только из доверенной локальной сети, и запустить:
+
+```bash
+docker compose up -d --build
+```
+
+Корневой `docker-compose.yml` — production stack. Test/dev stack запускается только из папки `test`:
+
+```bash
+cd test && docker compose up -d --build
+```
+
+### Obsidian Remotely Save
+
+Рекомендуемые настройки:
+
+```text
+Remote Service: WebDAV
+Server Address: http://<host>/webdav/<vault-slug>/
+Username: логин mdock
+Password: пароль mdock
+Auth Type: basic
+Depth Header Sent To Servers: only supports depth='1'
+Remote Base Dir: оставить пустым или задать имя папки
+```
+
+В MVP не включайте `supports depth='infinity'`: mdock намеренно отклоняет `Depth: infinity`.
+
+Если `Remote Base Dir` пустой, Remotely Save использует имя локального Obsidian vault, например `Obsidian Vault`. Web UI mdock по умолчанию открывает папку из `DEFAULT_FILE_ROOT`; дефолт — `Obsidian Vault`, отключение — `DEFAULT_FILE_ROOT=.`.
+
+### Версии И Релизы
+
+Текущая версия хранится в [VERSION](VERSION) и доступна через:
+
+```bash
+mdock version
+```
+
+```text
+GET /api/version
+```
+
+Проект пока pre-1.0. `1.0.0` откладывается до стабильных контрактов WebDAV, редактора, backup/restore и upgrade. Стратегия описана в [docs/release-strategy.md](docs/release-strategy.md), изменения — в [CHANGELOG.md](CHANGELOG.md).
+
+### Документация
+
+- API: [docs/server-api.md](docs/server-api.md)
+- Деплой, SQL backups и CI/CD: [docs/deployment.md](docs/deployment.md)
+- Git-модель хранилищ: [docs/git-vaults.md](docs/git-vaults.md)
+- Совместимость Remotely Save: [docs/remotely-save-webdav-compatibility.md](docs/remotely-save-webdav-compatibility.md)
+- Технический стек: [docs/tech-stack.md](docs/tech-stack.md)
+
+### Проверки
+
+```bash
+go test ./...
+go build -mod=vendor -buildvcs=false ./cmd/mdock
+cd web && npm test
+cd web && npm run build
+docker compose config
+cd test && docker compose config
+```
+
 ## Development
 
 Install dependencies:
@@ -100,6 +209,22 @@ Remote push is manual in the current server API. Future auto-push must run only 
 - Server API contract: [docs/server-api.md](docs/server-api.md)
 - Deployment, SQL backups and CI/CD: [docs/deployment.md](docs/deployment.md)
 - Git model for vaults: [docs/git-vaults.md](docs/git-vaults.md)
+- Release strategy: [docs/release-strategy.md](docs/release-strategy.md)
+- Changelog: [CHANGELOG.md](CHANGELOG.md)
+
+## Versioning
+
+The current version is stored in [VERSION](VERSION) and exposed by:
+
+```bash
+mdock version
+```
+
+```text
+GET /api/version
+```
+
+mdock is still pre-1.0. `1.0.0` is intentionally deferred until WebDAV compatibility, editor behavior, backup/restore and upgrade contracts are stable.
 
 ## Production Docker
 
@@ -110,6 +235,16 @@ docker compose up -d --build
 ```
 
 The root `docker-compose.yml` is the production stack. It mounts separate volumes for `/vaults`, `/data` and `/backups`.
+`DEFAULT_FILE_ROOT` controls which folder the web UI opens by default inside a vault. The default is `Obsidian Vault`; set `DEFAULT_FILE_ROOT=.` to open the real vault root.
+
+`.env.example` is grouped by purpose:
+
+- HTTP: bind address.
+- Storage: vaults, SQLite data and SQL backups.
+- Git and files: git binary, default file root, git debounce and file lock TTL.
+- Auth/session: cookie/session behavior and first-admin/bootstrap settings.
+- Request limits/rate limits: API/WebDAV body limits and auth throttling.
+
 Security-related limits can be configured through env:
 
 ```text

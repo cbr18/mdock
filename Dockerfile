@@ -24,7 +24,8 @@ ENV HTTP_ADDR=:8080 \
   VAULTS_ROOT=/vaults \
   DATA_DIR=/data \
   BACKUP_DIR=/backups \
-  GIT_BIN=git
+  GIT_BIN=git \
+  DEFAULT_FILE_ROOT="Obsidian Vault"
 VOLUME ["/vaults", "/data", "/backups"]
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

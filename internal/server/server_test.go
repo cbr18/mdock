@@ -15,6 +15,7 @@ import (
 
 	"github.com/cbr/mdock/internal/config"
 	"github.com/cbr/mdock/internal/store"
+	"github.com/cbr/mdock/internal/version"
 )
 
 func TestHealthAndLoginFlow(t *testing.T) {
@@ -50,6 +51,16 @@ func TestHealthAndLoginFlow(t *testing.T) {
 	}
 	if !strings.Contains(ready.Body.String(), `"sqlite":"ok"`) || !strings.Contains(ready.Body.String(), `"vaultsRoot":"ok"`) {
 		t.Fatalf("ready body missing checks: %s", ready.Body.String())
+	}
+
+	versionResponse := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/version", nil)
+	srv.Handler().ServeHTTP(versionResponse, req)
+	if versionResponse.Code != http.StatusOK {
+		t.Fatalf("version status = %d body=%s", versionResponse.Code, versionResponse.Body.String())
+	}
+	if !strings.Contains(versionResponse.Body.String(), `"version":"`+version.Current+`"`) {
+		t.Fatalf("version body mismatch: %s", versionResponse.Body.String())
 	}
 
 	body, _ := json.Marshal(map[string]string{"username": "admin", "password": "secret"})
@@ -280,6 +291,9 @@ func TestRegisterCreateVaultAndWebDAVRoundTrip(t *testing.T) {
 	}
 	if !strings.Contains(detail.Body.String(), `"url":"https://notes.example.test/webdav/work-notes/"`) {
 		t.Fatalf("vault detail missing webdav url: %s", detail.Body.String())
+	}
+	if !strings.Contains(detail.Body.String(), `"default_file_root":"Obsidian Vault"`) {
+		t.Fatalf("vault detail missing default file root: %s", detail.Body.String())
 	}
 
 	renameBody, _ := json.Marshal(map[string]string{"name": "Renamed Notes"})

@@ -15,6 +15,7 @@ services:
       DATA_DIR: "/data"
       BACKUP_DIR: "/backups"
       GIT_BIN: "${GIT_BIN:-git}"
+      DEFAULT_FILE_ROOT: "${DEFAULT_FILE_ROOT:-Obsidian Vault}"
       COMMIT_DEBOUNCE: "${COMMIT_DEBOUNCE:-5s}"
       LOCK_TTL: "${LOCK_TTL:-30s}"
       SESSION_TTL: "${SESSION_TTL:-24h}"

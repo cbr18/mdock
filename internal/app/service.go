@@ -98,6 +98,13 @@ func (s *Service) LockTTL() time.Duration {
 	return s.cfg.LockTTL
 }
 
+func (s *Service) DefaultFileRoot() string {
+	if s.cfg.DefaultFileRoot == "" {
+		return "Obsidian Vault"
+	}
+	return s.cfg.DefaultFileRoot
+}
+
 func (s *Service) CookieSecure() bool {
 	return s.cfg.CookieSecure
 }

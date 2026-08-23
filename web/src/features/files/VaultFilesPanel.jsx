@@ -9,12 +9,14 @@ import { MarkdownPreview } from './MarkdownPreview.jsx';
 const loadMarkdownEditor = () => import('../editor/MarkdownEditor.jsx').then((module) => ({ default: module.MarkdownEditor }));
 const MarkdownEditor = lazy(loadMarkdownEditor);
 
-export function VaultFilesPanel({ slug }) {
+export function VaultFilesPanel({ slug, defaultFileRoot = 'Obsidian Vault' }) {
   const { language, t } = useLanguage();
+  const defaultRoot = useMemo(() => normalizeDirectoryPath(defaultFileRoot), [defaultFileRoot]);
   const [path, setPath] = useState('.');
   const [treeEntries, setTreeEntries] = useState({});
   const [expandedPaths, setExpandedPaths] = useState(() => new Set(['.']));
   const [loadingPaths, setLoadingPaths] = useState(() => new Set());
+  const [defaultRootMissing, setDefaultRootMissing] = useState(false);
   const [draggedEntry, setDraggedEntry] = useState(null);
   const [dropTargetPath, setDropTargetPath] = useState('');
   const [pendingMoveEntry, setPendingMoveEntry] = useState(null);
@@ -62,20 +64,38 @@ export function VaultFilesPanel({ slug }) {
     let active = true;
     setMessage('');
     const restoredExpanded = readExpandedPaths(slug);
-    setPath('.');
+    const initialExpanded = new Set(restoredExpanded);
+    if (defaultRoot !== '.') {
+      initialExpanded.add(defaultRoot);
+    }
+    setPath(defaultRoot);
     setSelectedFile(null);
     setContent('');
     setSavedContent('');
     setEditing(false);
+    setDefaultRootMissing(false);
     closeEditorSession();
-    setExpandedPaths(restoredExpanded);
+    setExpandedPaths(initialExpanded);
     setTreeEntries({});
-    listFiles(slug, '.')
-      .then((payload) => {
+    async function loadInitialFiles() {
+      try {
+        try {
+          const payload = await listFiles(slug, defaultRoot);
+          if (!active) return;
+          setTreeEntries({ [defaultRoot]: sortEntries(payload.entries || [], language) });
+        } catch (error) {
+          if (!active) return;
+          if (defaultRoot === '.') {
+            throw error;
+          }
+          setTreeEntries({ [defaultRoot]: [] });
+          setDefaultRootMissing(true);
+          setMessage(t('defaultFileRootMissing').replace('{path}', defaultRoot));
+        }
+
         if (!active) return;
-        setTreeEntries({ '.': sortEntries(payload.entries || [], language) });
-        const childPaths = [...restoredExpanded].filter((entryPath) => entryPath !== '.');
-        return Promise.all(childPaths.map(async (entryPath) => {
+        const childPaths = [...initialExpanded].filter((entryPath) => entryPath !== '.' && entryPath !== defaultRoot);
+        const loadedChildren = await Promise.all(childPaths.map(async (entryPath) => {
           try {
             const childPayload = await listFiles(slug, entryPath);
             return [entryPath, sortEntries(childPayload.entries || [], language)];
@@ -83,30 +103,29 @@ export function VaultFilesPanel({ slug }) {
             return [entryPath, null];
           }
         }));
-      })
-      .then((loadedChildren) => {
-        if (!active || !loadedChildren?.length) return;
-        setTreeEntries((current) => {
-          const next = { ...current };
-          for (const [entryPath, childEntries] of loadedChildren) {
-            if (childEntries) next[entryPath] = childEntries;
-          }
-          return next;
-        });
-      })
-      .then(async () => {
+        if (active && loadedChildren.length) {
+          setTreeEntries((current) => {
+            const next = { ...current };
+            for (const [entryPath, childEntries] of loadedChildren) {
+              if (childEntries) next[entryPath] = childEntries;
+            }
+            return next;
+          });
+        }
+
         const filePath = filePathFromLocation();
         if (!active || !filePath) return;
         await openFilePath(filePath, { syncURL: false });
-      })
-      .catch(() => {
+      } catch {
         if (!active) return;
         setMessage(t('fileLoadFailed'));
-      });
+      }
+    }
+    loadInitialFiles();
     return () => {
       active = false;
     };
-  }, [slug, t, language]);
+  }, [slug, t, language, defaultRoot]);
 
   useEffect(() => {
     writeExpandedPaths(slug, expandedPaths);
@@ -121,6 +140,9 @@ export function VaultFilesPanel({ slug }) {
         ...current,
         [directoryPath]: sortEntries(payload.entries || [], language)
       }));
+      if (directoryPath === defaultRoot) {
+        setDefaultRootMissing(false);
+      }
     } finally {
       setLoadingPaths((current) => {
         const next = new Set(current);
@@ -298,6 +320,13 @@ export function VaultFilesPanel({ slug }) {
     return parts.length ? parts.join('/') : '.';
   }, [path]);
 
+  const treeRootPath = useMemo(() => {
+    if (defaultRoot === '.') return '.';
+    if (path === '.' || !isPathInside(path, defaultRoot)) return '.';
+    return defaultRoot;
+  }, [defaultRoot, path]);
+  const currentDirectoryAvailable = !(defaultRootMissing && path === defaultRoot);
+
   function handleViewMode(nextMode) {
     setViewMode(nextMode);
     updateSearchParams({ view: nextMode });
@@ -332,6 +361,33 @@ export function VaultFilesPanel({ slug }) {
         setExpandedPaths((current) => new Set(current).add(basePath));
       }
       await loadDirectory(basePath || '.', { force: true });
+      setMessage(t('folderCreated'));
+    } catch {
+      setMessage(t('folderCreateFailed'));
+    }
+  }
+
+  async function handleOpenDirectory(directoryPath) {
+    setPath(directoryPath || '.');
+    if (directoryPath && directoryPath !== '.') {
+      setExpandedPaths((current) => new Set(current).add(directoryPath));
+    }
+    try {
+      await loadDirectory(directoryPath || '.', { force: true });
+      setMessage('');
+    } catch {
+      setMessage(t('fileLoadFailed'));
+    }
+  }
+
+  async function handleCreateDefaultRoot() {
+    if (defaultRoot === '.') return;
+    try {
+      await createDirectory(slug, defaultRoot);
+      setDefaultRootMissing(false);
+      setPath(defaultRoot);
+      setExpandedPaths((current) => new Set(current).add(defaultRoot));
+      await loadDirectory(defaultRoot, { force: true });
       setMessage(t('folderCreated'));
     } catch {
       setMessage(t('folderCreateFailed'));
@@ -509,7 +565,7 @@ export function VaultFilesPanel({ slug }) {
 
   function renderTreeEntries(directoryPath, level = 0) {
     const entries = treeEntries[directoryPath] || [];
-    if (!entries.length && directoryPath === '.') {
+    if (!entries.length && (directoryPath === '.' || directoryPath === defaultRoot)) {
       return <p className="muted">{t('noFiles')}</p>;
     }
     return entries.map((entry) => {
@@ -645,16 +701,34 @@ export function VaultFilesPanel({ slug }) {
             onDragLeave={(event) => handleDragLeave(event, path || '.')}
             onDrop={(event) => handleDrop(event, path || '.')}
           >
-            <button type="button" className="icon-button" onClick={() => setPath(parentPath)} disabled={path === '.'}>
+            <button type="button" className="icon-button" onClick={() => handleOpenDirectory(parentPath)} disabled={path === '.'}>
               <ChevronLeft size={16} aria-hidden="true" />
               <span className="sr-only">{t('parentFolder')}</span>
             </button>
             <span className="file-pathbar-current">{path === '.' ? '/' : path}</span>
-            <button type="button" className="icon-button" onClick={() => handleCreateFile(path)} title={t('createFile')}>
+            {defaultRoot !== '.' ? (
+              <>
+                <button type="button" className="icon-text-button compact-path-button" onClick={() => handleOpenDirectory(defaultRoot)}>
+                  <FolderOpen size={16} aria-hidden="true" />
+                  {t('defaultFileRootOpen')}
+                </button>
+                <button type="button" className="icon-text-button compact-path-button" onClick={() => handleOpenDirectory('.')}>
+                  <Folder size={16} aria-hidden="true" />
+                  {t('openRootFolder')}
+                </button>
+              </>
+            ) : null}
+            {defaultRootMissing ? (
+              <button type="button" className="icon-text-button compact-path-button" onClick={handleCreateDefaultRoot}>
+                <FolderPlus size={16} aria-hidden="true" />
+                {t('createDefaultFileRoot')}
+              </button>
+            ) : null}
+            <button type="button" className="icon-button" onClick={() => handleCreateFile(path)} disabled={!currentDirectoryAvailable} title={t('createFile')}>
               <FilePlus2 size={16} aria-hidden="true" />
               <span className="sr-only">{t('createFile')}</span>
             </button>
-            <button type="button" className="icon-button" onClick={() => handleCreateDirectory(path)} title={t('createFolder')}>
+            <button type="button" className="icon-button" onClick={() => handleCreateDirectory(path)} disabled={!currentDirectoryAvailable} title={t('createFolder')}>
               <FolderPlus size={16} aria-hidden="true" />
               <span className="sr-only">{t('createFolder')}</span>
             </button>
@@ -672,7 +746,7 @@ export function VaultFilesPanel({ slug }) {
             </div>
           ) : null}
           <div className="file-list">
-            {renderTreeEntries('.')}
+            {renderTreeEntries(treeRootPath)}
           </div>
         </section>
         <section className="file-preview-pane" aria-label={t('preview')}>
@@ -774,6 +848,17 @@ function ensureMarkdownExtension(name) {
 function joinPath(basePath, name) {
   if (!basePath || basePath === '.') return name;
   return `${basePath.replace(/\/+$/, '')}/${name.replace(/^\/+/, '')}`;
+}
+
+function normalizeDirectoryPath(value) {
+  const normalized = String(value || 'Obsidian Vault').trim().split('/').filter(Boolean).join('/');
+  if (!normalized || normalized === '.') return '.';
+  return normalized;
+}
+
+function isPathInside(entryPath, directoryPath) {
+  if (directoryPath === '.') return true;
+  return entryPath === directoryPath || entryPath.startsWith(`${directoryPath}/`);
 }
 
 function parentPathFor(entryPath) {

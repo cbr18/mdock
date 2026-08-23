@@ -168,7 +168,7 @@ export function VaultPage({ slug, onNavigate, onVaultChanged }) {
           {t('vaultSettings')}
         </button>
       </div>
-      {section === 'editor' && !vault.archived ? <VaultFilesPanel slug={slug} /> : null}
+      {section === 'editor' && !vault.archived ? <VaultFilesPanel slug={slug} defaultFileRoot={webdav?.default_file_root} /> : null}
       {section === 'editor' && vault.archived ? (
         <div className="vault-settings-grid">
           <Panel title={t('git')}>

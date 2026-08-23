@@ -22,8 +22,9 @@ type renameVaultRequest struct {
 }
 
 type webDAVDetails struct {
-	Path string `json:"path"`
-	URL  string `json:"url,omitempty"`
+	Path            string `json:"path"`
+	URL             string `json:"url,omitempty"`
+	DefaultFileRoot string `json:"default_file_root"`
 }
 
 func (h *Handler) vaults(w http.ResponseWriter, r *http.Request) {
@@ -158,6 +159,7 @@ func (h *Handler) handleVaultError(w http.ResponseWriter, r *http.Request, opera
 
 func (h *Handler) webDAVDetails(r *http.Request, item store.Vault) webDAVDetails {
 	path := "/webdav/" + item.Slug + "/"
+	defaultFileRoot := h.app.DefaultFileRoot()
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
@@ -170,7 +172,7 @@ func (h *Handler) webDAVDetails(r *http.Request, item store.Vault) webDAVDetails
 		host = strings.TrimSpace(strings.Split(forwarded, ",")[0])
 	}
 	if host == "" {
-		return webDAVDetails{Path: path}
+		return webDAVDetails{Path: path, DefaultFileRoot: defaultFileRoot}
 	}
-	return webDAVDetails{Path: path, URL: scheme + "://" + host + path}
+	return webDAVDetails{Path: path, URL: scheme + "://" + host + path, DefaultFileRoot: defaultFileRoot}
 }

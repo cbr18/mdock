@@ -13,6 +13,7 @@ type Config struct {
 	DataDir               string
 	GitBin                string
 	BackupDir             string
+	DefaultFileRoot       string
 	CommitDebounce        time.Duration
 	LockTTL               time.Duration
 	SessionTTL            time.Duration
@@ -33,6 +34,7 @@ func Load() (Config, error) {
 		DataDir:               getEnv("DATA_DIR", "/data"),
 		GitBin:                getEnv("GIT_BIN", "git"),
 		BackupDir:             getEnv("BACKUP_DIR", "/backups"),
+		DefaultFileRoot:       getEnv("DEFAULT_FILE_ROOT", "Obsidian Vault"),
 		CommitDebounce:        5 * time.Second,
 		LockTTL:               30 * time.Second,
 		SessionTTL:            24 * time.Hour,

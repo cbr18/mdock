@@ -149,7 +149,7 @@ test('supports browser back after opening a vault', async () => {
       return response({ remote_url: '', last_push_at: '', last_push_error: '' });
     }
     if (url === '/api/vaults/work-notes/webdav') {
-      return response({ webdav: { url: 'http://localhost:3000/webdav/work-notes/' } });
+      return response({ webdav: { url: 'http://localhost:3000/webdav/work-notes/', default_file_root: '.' } });
     }
     if (url === '/api/vaults/work-notes/files?path=.') {
       return response({ entries: [] });
@@ -203,7 +203,7 @@ test('renders vault file list and markdown preview', async () => {
       return response({ remote_url: '', last_push_at: '', last_push_error: '' });
     }
     if (url === '/api/vaults/work-notes/webdav') {
-      return response({ webdav: { url: 'http://localhost:3000/webdav/work-notes/' } });
+      return response({ webdav: { url: 'http://localhost:3000/webdav/work-notes/', default_file_root: '.' } });
     }
     if (url === '/api/vaults/work-notes/files?path=.') {
       return response({
@@ -362,6 +362,125 @@ test('renders vault file list and markdown preview', async () => {
   expect(window.location.search).toContain('section=settings');
 }, 15000);
 
+test('opens configured default file root in vault file panel', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  const fetchMock = vi.fn(async (url) => {
+    if (url === '/api/auth/me') {
+      return response({ username: 'admin', is_admin: true });
+    }
+    if (url === '/api/vaults') {
+      return response({ vaults: [{ id: 1, slug: 'work-notes', name: 'Work Notes', kind: 'shared', role: 'owner' }] });
+    }
+    if (url === '/api/vaults?archived=only') {
+      return response({ vaults: [] });
+    }
+    if (url === '/api/vaults/work-notes') {
+      return response({ vault: { id: 1, slug: 'work-notes', name: 'Work Notes', path: 'vault-1', kind: 'shared', role: 'owner', archived: false } });
+    }
+    if (url === '/api/vaults/work-notes/members') {
+      return response({ members: [] });
+    }
+    if (url === '/api/vaults/work-notes/git/status') {
+      return response({ dirty: false, queue_len: 0 });
+    }
+    if (url === '/api/vaults/work-notes/git/commits?limit=20') {
+      return response({ commits: [] });
+    }
+    if (url === '/api/vaults/work-notes/git/remote') {
+      return response({ remote_url: '', last_push_at: '', last_push_error: '' });
+    }
+    if (url === '/api/vaults/work-notes/webdav') {
+      return response({ webdav: { url: 'http://localhost:3000/webdav/work-notes/', default_file_root: 'Obsidian Vault' } });
+    }
+    if (url === '/api/vaults/work-notes/files?path=Obsidian%20Vault') {
+      return response({
+        entries: [
+          { name: 'note.md', path: 'Obsidian Vault/note.md', is_dir: false, size: 4, mod_time: '2026-08-15T10:00:00Z' }
+        ]
+      });
+    }
+    if (url === '/api/vaults/work-notes/files/content?path=Obsidian%20Vault%2Fnote.md') {
+      return response({ content: '# Default Root' });
+    }
+    if (url === '/api/vaults/work-notes/files?path=.') {
+      return response({ entries: [] });
+    }
+    return response({}, 404);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  render(<App />);
+
+  await screen.findByRole('heading', { name: 'Хранилища' });
+  fireEvent.click(screen.getByRole('button', { name: /Work Notes/ }));
+  const noteLink = await screen.findByRole('link', { name: 'note.md' });
+  expect(fetchMock).toHaveBeenCalledWith('/api/vaults/work-notes/files?path=Obsidian%20Vault', expect.anything());
+  expect(noteLink).toHaveAttribute('href', expect.stringContaining('file=Obsidian+Vault%2Fnote.md'));
+
+  fireEvent.click(noteLink);
+  expect(await screen.findByRole('heading', { name: 'Default Root' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Корень' }));
+  await waitFor(() => expect(document.querySelector('.file-pathbar-current')).toHaveTextContent('/'));
+  expect(fetchMock).toHaveBeenCalledWith('/api/vaults/work-notes/files?path=.', expect.anything());
+});
+
+test('shows create action when configured default file root is missing', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  let defaultRootExists = false;
+  const fetchMock = vi.fn(async (url, options = {}) => {
+    if (url === '/api/auth/me') {
+      return response({ username: 'admin', is_admin: true });
+    }
+    if (url === '/api/vaults') {
+      return response({ vaults: [{ id: 1, slug: 'work-notes', name: 'Work Notes', kind: 'shared', role: 'owner' }] });
+    }
+    if (url === '/api/vaults?archived=only') {
+      return response({ vaults: [] });
+    }
+    if (url === '/api/vaults/work-notes') {
+      return response({ vault: { id: 1, slug: 'work-notes', name: 'Work Notes', path: 'vault-1', kind: 'shared', role: 'owner', archived: false } });
+    }
+    if (url === '/api/vaults/work-notes/members') {
+      return response({ members: [] });
+    }
+    if (url === '/api/vaults/work-notes/git/status') {
+      return response({ dirty: false, queue_len: 0 });
+    }
+    if (url === '/api/vaults/work-notes/git/commits?limit=20') {
+      return response({ commits: [] });
+    }
+    if (url === '/api/vaults/work-notes/git/remote') {
+      return response({ remote_url: '', last_push_at: '', last_push_error: '' });
+    }
+    if (url === '/api/vaults/work-notes/webdav') {
+      return response({ webdav: { url: 'http://localhost:3000/webdav/work-notes/', default_file_root: 'Obsidian Vault' } });
+    }
+    if (url === '/api/vaults/work-notes/files?path=Obsidian%20Vault') {
+      return defaultRootExists ? response({ entries: [] }) : response({}, 404);
+    }
+    if (url === '/api/vaults/work-notes/dirs' && options.method === 'POST') {
+      defaultRootExists = true;
+      return response({ path: 'Obsidian Vault' }, 201);
+    }
+    return response({}, 404);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  render(<App />);
+
+  await screen.findByRole('heading', { name: 'Хранилища' });
+  fireEvent.click(screen.getByRole('button', { name: /Work Notes/ }));
+  expect(await screen.findByText('Рабочая папка Obsidian Vault ещё не создана')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Создать рабочую папку' }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/vaults/work-notes/dirs', expect.objectContaining({
+    method: 'POST',
+    body: JSON.stringify({ path: 'Obsidian Vault' })
+  })));
+  expect(await screen.findByText('Папка создана')).toBeInTheDocument();
+});
+
 test('opens vault file from deep link', async () => {
   vi.stubGlobal('scrollTo', vi.fn());
   window.history.replaceState(null, '', '/?page=vault&slug=work-notes&section=editor&file=folder%2Fchild.md&view=rendered');
@@ -391,7 +510,7 @@ test('opens vault file from deep link', async () => {
       return response({ remote_url: '', last_push_at: '', last_push_error: '' });
     }
     if (url === '/api/vaults/work-notes/webdav') {
-      return response({ webdav: { url: 'http://localhost:3000/webdav/work-notes/' } });
+      return response({ webdav: { url: 'http://localhost:3000/webdav/work-notes/', default_file_root: '.' } });
     }
     if (url === '/api/vaults/work-notes/files?path=.') {
       return response({
