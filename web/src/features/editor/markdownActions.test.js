@@ -35,6 +35,17 @@ describe('markdown editor actions', () => {
     expect(toggleComment(state('secret', 0, 6)).text).toBe('%%secret%%');
   });
 
+  test('keeps structural prefix when applying inline markers over a heading', () => {
+    expect(toggleInlineMark(state('## Title', 0, 8), '**').text).toBe('## **Title**');
+    expect(toggleInlineMark(state('- item', 0, 6), '**').text).toBe('- **item**');
+    expect(toggleInlineMark(state('> quote', 0, 7), '**').text).toBe('> **quote**');
+    expect(toggleInlineMark(state('## **Title**', 0, 13), '**').text).toBe('## Title');
+  });
+
+  test('applies inline markers per line over a multi-line selection', () => {
+    expect(toggleInlineMark(state('one\ntwo', 0, 7), '**').text).toBe('**one**\n**two**');
+  });
+
   test('uses double backticks when inline code contains a backtick', () => {
     expect(toggleInlineCode(state('a ` b', 0, 5)).text).toBe('``a ` b``');
   });

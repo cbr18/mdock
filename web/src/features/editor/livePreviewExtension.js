@@ -28,6 +28,10 @@ export function livePreviewExtension({ frontmatterLabel = 'Frontmatter' } = {}) 
         }
       }
 
+      if (!activeBlock && transaction.docChanged && transaction.isUserEvent('input')) {
+        activeBlock = blockAtPosition(transaction.state, transaction.state.selection.main.head);
+      }
+
       if (!transaction.docChanged && !transaction.selection && transaction.effects.length === 0) {
         return {
           activeBlock,
@@ -43,7 +47,9 @@ export function livePreviewExtension({ frontmatterLabel = 'Frontmatter' } = {}) 
     field,
     Prec.highest(keymap.of([
       { key: 'ArrowUp', run: moveLogicalLine(-1) },
-      { key: 'ArrowDown', run: moveLogicalLine(1) }
+      { key: 'ArrowDown', run: moveLogicalLine(1) },
+      { key: 'Enter', run: handleEnter },
+      { key: 'Shift-Enter', run: handleSoftEnter }
     ])),
     Prec.highest(EditorView.domEventHandlers({
       mousedown(event, view) {
@@ -81,6 +87,34 @@ function moveLogicalLine(direction) {
     view.dispatch({ selection: { anchor: nextHead }, scrollIntoView: true, userEvent: 'select' });
     return true;
   };
+}
+
+function handleEnter(view) {
+  return commitLineBreak(view, '\n\n');
+}
+
+function handleSoftEnter(view) {
+  return commitLineBreak(view, '\n');
+}
+
+function commitLineBreak(view, separator) {
+  const selection = view.state.selection.main;
+  const from = Math.min(selection.from, selection.to);
+  const to = Math.max(selection.from, selection.to);
+  const insert = isCaretInsideFence(view.state) ? '\n' : separator;
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: { anchor: from + insert.length },
+    scrollIntoView: true,
+    userEvent: 'input'
+  });
+  return true;
+}
+
+function isCaretInsideFence(state) {
+  const position = state.selection.main.head;
+  const blocks = splitBlocks(state.doc.toString());
+  return blocks.some((block) => block.type === 'code' && position >= block.from && position <= block.to);
 }
 
 function buildStateValue(state, frontmatterLabel, activeBlock, setActiveBlock) {
@@ -385,7 +419,7 @@ class RenderedMarkdownBlockWidget extends WidgetType {
     container.addEventListener('mousedown', (event) => {
       event.preventDefault();
       view.dispatch({
-        selection: { anchor: this.block.from },
+        selection: { anchor: this.block.sourceTo ?? this.block.to },
         effects: this.setActiveBlock.of(activeBlockRange(this.block)),
         scrollIntoView: true
       });
@@ -447,7 +481,7 @@ class RenderedMarkdownDocumentWidget extends WidgetType {
       if (!block) return;
       event.preventDefault();
       view.dispatch({
-        selection: { anchor: block.from },
+        selection: { anchor: block.sourceTo ?? block.to },
         effects: this.setActiveBlock.of(activeBlockRange(block)),
         scrollIntoView: true
       });
@@ -501,6 +535,11 @@ function activeBlockRange(block) {
   return { from: block.from, to: block.to, sourceTo: block.sourceTo };
 }
 
+function blockAtPosition(state, position) {
+  const blocks = splitBlocks(state.doc.toString());
+  return blocks.find((block) => position >= block.from && position < block.to) ?? blocks[blocks.length - 1] ?? null;
+}
+
 function requestLivePreviewMeasure(view) {
   const schedule = typeof window.requestAnimationFrame === 'function'
     ? window.requestAnimationFrame
@@ -513,6 +552,11 @@ function requestLivePreviewMeasure(view) {
 
 export const __livePreviewInternals = {
   activeBlockRange,
+  blockAtPosition,
   requestLivePreviewMeasure,
-  splitBlocks
+  splitBlocks,
+  handleEnter,
+  handleSoftEnter,
+  commitLineBreak,
+  isCaretInsideFence
 };

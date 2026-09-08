@@ -241,7 +241,23 @@ const DICTIONARY = {
     importInProgress: 'Импортируем…',
     importDone: 'Импортировано: создано {created}, переименовано {renamed}, пропущено {skipped}',
     importFailed: 'Не удалось импортировать',
-    importNoTextFiles: 'Нет текстовых файлов для импорта'
+    importNoTextFiles: 'Нет текстовых файлов для импорта',
+    toolbarApply: 'Применить',
+    formLabel: 'Текст',
+    formAlt: 'Описание',
+    formTarget: 'Страница',
+    formAlias: 'Псевдоним',
+    formTitle: 'Заголовок',
+    formType: 'Тип',
+    formRows: 'Строки',
+    formColumns: 'Колонки',
+    formId: 'Идентификатор',
+    formText: 'Текст',
+    formKey: 'Ключ',
+    formValue: 'Значение',
+    formUrl: 'URL',
+    formLanguage: 'Язык',
+    formLanguageNone: 'Без языка'
   },
   en: {
     account: 'Account',
@@ -482,7 +498,23 @@ const DICTIONARY = {
     importInProgress: 'Importing…',
     importDone: 'Imported: created {created}, renamed {renamed}, skipped {skipped}',
     importFailed: 'Could not import',
-    importNoTextFiles: 'No text files to import'
+    importNoTextFiles: 'No text files to import',
+    toolbarApply: 'Apply',
+    formLabel: 'Text',
+    formAlt: 'Description',
+    formTarget: 'Page',
+    formAlias: 'Alias',
+    formTitle: 'Title',
+    formType: 'Type',
+    formRows: 'Rows',
+    formColumns: 'Columns',
+    formId: 'Id',
+    formText: 'Text',
+    formKey: 'Key',
+    formValue: 'Value',
+    formUrl: 'URL',
+    formLanguage: 'Language',
+    formLanguageNone: 'No language'
   }
 };
 

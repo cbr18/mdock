@@ -23,6 +23,9 @@ export function toggleInlineMark(state, marker) {
     const unwrapped = selection.value.slice(marker.length, selection.value.length - marker.length);
     return replaceRange(state, selection.start, selection.end, unwrapped, selection.start, selection.start + unwrapped.length);
   }
+  if (selection.value.length > 0 && (selection.value.includes('\n') || coversStructuralPrefix(state, selection))) {
+    return applyInlineOverLines(state, marker);
+  }
   return replaceSelection(state, `${marker}${selection.value}${marker}`, selection.start + marker.length, selection.end + marker.length);
 }
 
@@ -190,6 +193,34 @@ function selectedLineBlock(state) {
 function replaceSelection(state, value, selectionStart, selectionEnd) {
   const selection = selectedText(state);
   return replaceRange(state, selection.start, selection.end, value, selectionStart, selectionEnd);
+}
+
+function applyInlineOverLines(state, marker) {
+  const block = selectedLineBlock(state);
+  const next = block.value.split('\n').map((line) => {
+    if (line.trim() === '') return line;
+    const prefix = structuralPrefix(line);
+    const content = line.slice(prefix.length);
+    if (content.startsWith(marker) && content.endsWith(marker) && content.length >= marker.length * 2) {
+      return prefix + content.slice(marker.length, content.length - marker.length);
+    }
+    return prefix + marker + content + marker;
+  }).join('\n');
+  return replaceRange(state, block.start, block.end, next, block.start, block.start + next.length);
+}
+
+function coversStructuralPrefix(state, selection) {
+  if (selection.value.includes('\n')) return true;
+  const lineStart = state.text.lastIndexOf('\n', Math.max(0, selection.start - 1)) + 1;
+  let lineEnd = state.text.indexOf('\n', selection.end);
+  if (lineEnd === -1) lineEnd = state.text.length;
+  const prefixLength = structuralPrefix(state.text.slice(lineStart, lineEnd)).length;
+  return prefixLength > 0 && selection.start - lineStart <= prefixLength;
+}
+
+function structuralPrefix(line) {
+  const match = line.match(/^(#{1,6}[ \t]+|>\s?|-\s+\[[ xX]?\]\s+|[-*+][ \t]+|\d{1,9}[.)][ \t]+)/);
+  return match ? match[0] : '';
 }
 
 function replaceRange(state, start, end, value, selectionStart, selectionEnd) {

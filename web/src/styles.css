@@ -1041,14 +1041,10 @@ legend {
 }
 
 .toolbar-popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 20;
+  z-index: 100;
   display: grid;
   gap: 4px;
   min-width: 190px;
-  max-height: min(420px, calc(100vh - 220px));
   padding: 6px;
   overflow: auto;
   border: 1px solid var(--border);
@@ -1085,6 +1081,46 @@ legend {
   background: transparent;
   color: var(--text-muted);
   opacity: 0.72;
+}
+
+.toolbar-form {
+  display: grid;
+  gap: 8px;
+  min-width: 220px;
+  padding: 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.toolbar-form-field {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.toolbar-form-field input,
+.toolbar-form-field select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.toolbar-form-field input:focus,
+.toolbar-form-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.toolbar-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .markdown-editor-shell .cm-editor {
@@ -1167,7 +1203,8 @@ legend {
 }
 
 .live-document-view .editor-toolbar {
-  display: none;
+  display: flex;
+  flex: 0 0 auto;
 }
 
 .cm-live-preview .cm-content {

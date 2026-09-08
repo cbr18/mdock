@@ -27,7 +27,7 @@ Roadmap фиксирует направление работ, но не заме
 - `2` Release checklist и tag-flow — done.
 - `3` `update.sh` — done.
 - `4` GitHub release compatibility — done.
-- Следующие задачи: `14` Git history UI, затем `15` Markdown toolbar implementation.
+- Следующая задача: `5` Mobile-first responsive audit.
 
 ## Полная Очередь Задач
 
@@ -60,17 +60,18 @@ Roadmap фиксирует направление работ, но не заме
 
 ### Current Next
 
-14. **Git history UI** — next
+14. **Git history UI** — done
    - Страница/секция истории vault.
    - Список коммитов.
    - Changed files в коммите.
    - Markdown diff/read-only preview.
    - Позже: restore file from commit.
 
-15. **Markdown toolbar implementation** — next
-   - Реализовать команды, которые сейчас только описаны требованиями.
-   - Headings, lists, task lists, quote, code block, table insert, link/image, frontmatter helper.
-   - Всё должно сохранять обычный Markdown, совместимый с Obsidian.
+15. **Markdown toolbar implementation** — done
+   - Реализованы команды, которые были только описаны требованиями.
+   - Headings, lists, task lists, quote, code block, table insert, link/image/wikilink/embed, callout, math, footnote, comment, frontmatter helper.
+   - Всё сохраняет обычный Markdown, совместимый с Obsidian.
+   - Проверено Playwright-сценарием (inline/paragraph/lists/insert-form + save).
 
 ### Web UI / Mobile / Adaptive
 
