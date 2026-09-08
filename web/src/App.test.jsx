@@ -600,6 +600,103 @@ test('does not load files for archived vault page', async () => {
   expect(fetchMock).not.toHaveBeenCalledWith('/api/vaults/old-notes/files?path=.', expect.anything());
 });
 
+test('restores file from commit, lists snapshots and shows activity tab', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  let snapshotsCalled = 0;
+  let restoreCalled = null;
+  let snapshotCreated = null;
+  const fetchMock = vi.fn(async (url, options = {}) => {
+    if (url === '/api/auth/me') {
+      return response({ username: 'admin', is_admin: true });
+    }
+    if (url === '/api/vaults') {
+      return response({ vaults: [{ id: 1, slug: 'work-notes', name: 'Work Notes', kind: 'shared', role: 'owner' }] });
+    }
+    if (url === '/api/vaults?archived=only') {
+      return response({ vaults: [] });
+    }
+    if (url === '/api/vaults/work-notes') {
+      return response({ vault: { id: 1, slug: 'work-notes', name: 'Work Notes', path: 'vault-1', kind: 'shared', role: 'owner', archived: false } });
+    }
+    if (url === '/api/vaults/work-notes/members') {
+      return response({ members: [] });
+    }
+    if (url === '/api/vaults/work-notes/git/status') {
+      return response({ dirty: false, queue_len: 0 });
+    }
+    if (url === '/api/vaults/work-notes/git/commits?limit=20' || url === '/api/vaults/work-notes/git/commits?limit=200') {
+      const limit = url.includes('limit=200') ? 200 : 20;
+      const commits = [
+        { hash: 'abcdef1234567890', subject: 'sync(web): update 1 file', author: 'mdock', created_at: '2026-08-15T12:00:00Z' },
+        { hash: '1111111111111111', subject: 'sync(web): update 1 file', author: 'mdock', created_at: '2026-08-14T09:00:00Z' }
+      ];
+      return response({ commits: limit === 200 ? commits : commits.slice(0, 1) });
+    }
+    if (url === '/api/vaults/work-notes/git/commits/abcdef1234567890') {
+      return response({
+        commit: {
+          hash: 'abcdef1234567890',
+          subject: 'sync(web): update 1 file',
+          author: 'mdock',
+          created_at: '2026-08-15T12:00:00Z',
+          files: [{ path: 'note.md', status: 'M', binary: false, adds: 2, deletes: 1 }],
+          diff: 'diff --git a/note.md b/note.md\n+hello'
+        }
+      });
+    }
+    if (url === '/api/vaults/work-notes/git/restore' && options.method === 'POST') {
+      restoreCalled = JSON.parse(options.body);
+      return response({ status: 'ok' });
+    }
+    if (url === '/api/vaults/work-notes/git/snapshots') {
+      snapshotsCalled += 1;
+      return response({ snapshots: ['pre-sync-1000000000', 'pre-sync-2000000000'] });
+    }
+    if (url === '/api/vaults/work-notes/git/snapshot' && options.method === 'POST') {
+      snapshotCreated = true;
+      return response({ tag: 'pre-sync-3000000000' });
+    }
+    if (url === '/api/vaults/work-notes/git/remote') {
+      return response({ remote_url: '', last_push_at: '', last_push_error: '' });
+    }
+    if (url === '/api/vaults/work-notes/webdav') {
+      return response({ webdav: { url: 'http://localhost:3000/webdav/work-notes/', default_file_root: '.' } });
+    }
+    if (url === '/api/vaults/work-notes/files?path=.') {
+      return response({ entries: [] });
+    }
+    return response({}, 404);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+  render(<App />);
+
+  await screen.findByRole('heading', { name: 'Хранилища' });
+  fireEvent.click(screen.getByRole('button', { name: /Work Notes/ }));
+
+  fireEvent.click(await screen.findByRole('tab', { name: 'Настройки хранилища' }));
+  const commitButton = await screen.findByRole('button', { name: /sync\(web\): update 1 file/ });
+  fireEvent.click(commitButton);
+  expect(await screen.findByLabelText('Изменённые файлы')).toBeInTheDocument();
+  const restoreButton = screen.getByRole('button', { name: 'Восстановить файл: note.md' });
+  fireEvent.click(restoreButton);
+  await waitFor(() => expect(restoreCalled).toEqual({ hash: 'abcdef1234567890', path: 'note.md' }));
+  expect(await screen.findByText('Файл восстановлен')).toBeInTheDocument();
+
+  expect(screen.getByRole('heading', { name: 'Снимки' })).toBeInTheDocument();
+  expect(snapshotsCalled).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText('pre-sync-1000000000')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Создать снимок' }));
+  await waitFor(() => expect(snapshotCreated).toBe(true));
+  expect(await screen.findByText('Снимок создан: pre-sync-3000000000')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('tab', { name: 'Активность' }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/vaults/work-notes/git/commits?limit=200', expect.anything()));
+  await waitFor(() => expect(document.querySelectorAll('.commit-day-group').length).toBe(2));
+  expect(window.location.search).toContain('section=activity');
+}, 15000);
+
 function response(payload, status = 200) {
   return {
     ok: status >= 200 && status < 300,

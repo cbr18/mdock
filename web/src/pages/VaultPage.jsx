@@ -8,6 +8,7 @@ import { StatusMessage } from '../components/ui/StatusMessage.jsx';
 import { CommitList } from '../features/git/CommitList.jsx';
 import { GitStatusPanel } from '../features/git/GitStatusPanel.jsx';
 import { RemoteSettings } from '../features/git/RemoteSettings.jsx';
+import { SnapshotPanel } from '../features/git/SnapshotPanel.jsx';
 import { VaultFilesPanel } from '../features/files/VaultFilesPanel.jsx';
 import { useLanguage } from '../features/i18n/LanguageProvider.jsx';
 
@@ -16,6 +17,7 @@ export function VaultPage({ slug, onNavigate, onVaultChanged }) {
   const [members, setMembers] = useState([]);
   const [status, setStatus] = useState(null);
   const [commits, setCommits] = useState([]);
+  const [activityCommits, setActivityCommits] = useState(null);
   const [remote, setRemoteState] = useState(null);
   const [webdav, setWebDAV] = useState(null);
   const [name, setName] = useState('');
@@ -30,6 +32,14 @@ export function VaultPage({ slug, onNavigate, onVaultChanged }) {
   useEffect(() => {
     setSection(sectionFromLocation());
   }, [slug]);
+
+  useEffect(() => {
+    if (section === 'activity' && !activityCommits) {
+      getCommits(slug, 200)
+        .then((payload) => setActivityCommits(payload.commits || []))
+        .catch(() => setActivityCommits([]));
+    }
+  }, [slug, section, activityCommits]);
 
   useEffect(() => {
     function handlePopState() {
@@ -53,8 +63,18 @@ export function VaultPage({ slug, onNavigate, onVaultChanged }) {
     setMembers(membersPayload.members || []);
     setStatus(activeVault.archived ? null : statusPayload);
     setCommits(activeVault.archived ? [] : commitsPayload.commits || []);
+    setActivityCommits(null);
     setRemoteState(activeVault.archived ? null : remotePayload);
     setWebDAV(activeVault.archived ? null : webdavPayload.webdav);
+  }
+
+  async function reloadActivity() {
+    try {
+      const payload = await getCommits(slug, 200);
+      setActivityCommits(payload.commits || []);
+    } catch {
+      setActivityCommits([]);
+    }
   }
 
   async function handleRename(event) {
@@ -164,12 +184,27 @@ export function VaultPage({ slug, onNavigate, onVaultChanged }) {
         <button type="button" role="tab" aria-selected={section === 'editor'} className={section === 'editor' ? 'active' : ''} onClick={() => handleSectionChange('editor')}>
           {t('vaultEditor')}
         </button>
+        <button type="button" role="tab" aria-selected={section === 'activity'} className={section === 'activity' ? 'active' : ''} onClick={() => handleSectionChange('activity')}>
+          {t('activity')}
+        </button>
         <button type="button" role="tab" aria-selected={section === 'settings'} className={section === 'settings' ? 'active' : ''} onClick={() => handleSectionChange('settings')}>
           {t('vaultSettings')}
         </button>
       </div>
       {section === 'editor' && !vault.archived ? <VaultFilesPanel slug={slug} defaultFileRoot={webdav?.default_file_root} /> : null}
       {section === 'editor' && vault.archived ? (
+        <div className="vault-settings-grid">
+          <Panel title={t('git')}>
+            <p className="muted">{t('archivedNotice')}</p>
+          </Panel>
+        </div>
+      ) : null}
+      {section === 'activity' && !vault.archived ? (
+        <div className="vault-activity-wrap">
+          <CommitList slug={slug} commits={activityCommits || []} groupByDay onRestored={reloadActivity} />
+        </div>
+      ) : null}
+      {section === 'activity' && vault.archived ? (
         <div className="vault-settings-grid">
           <Panel title={t('git')}>
             <p className="muted">{t('archivedNotice')}</p>
@@ -224,6 +259,7 @@ export function VaultPage({ slug, onNavigate, onVaultChanged }) {
           ) : (
             <>
               <GitStatusPanel status={status} />
+              <SnapshotPanel slug={slug} />
               <RemoteSettings
                 remoteURL={remote?.remote_url || ''}
                 lastPushAt={remote?.last_push_at || ''}
@@ -242,7 +278,7 @@ export function VaultPage({ slug, onNavigate, onVaultChanged }) {
 
 function sectionFromLocation() {
   const section = new URLSearchParams(window.location.search).get('section');
-  return section === 'settings' ? 'settings' : 'editor';
+  return section === 'settings' || section === 'activity' ? section : 'editor';
 }
 
 function updateSearchParam(key, value) {

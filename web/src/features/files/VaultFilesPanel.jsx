@@ -1,10 +1,11 @@
-import { ChevronDown, ChevronLeft, ChevronRight, Code2, FileInput, FilePlus2, FileText, Folder, FolderInput, FolderOpen, FolderPlus, PanelLeftClose, PanelLeftOpen, Rows2, Save, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Code2, FileInput, FilePlus2, FileText, Folder, FolderInput, FolderOpen, FolderPlus, PanelLeftClose, PanelLeftOpen, Rows2, Save, Trash2, Upload } from 'lucide-react';
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { createDirectory, createFile, deletePath, listFiles, movePath, readFileContent } from '../../api/files.js';
+import { createDirectory, createFile, deletePath, listFiles, movePath, readFileContent, writeFileContent } from '../../api/files.js';
 import { StatusMessage } from '../../components/ui/StatusMessage.jsx';
 import { createFileEditorSession } from '../editor/fileEditorSession.js';
 import { useLanguage } from '../i18n/LanguageProvider.jsx';
 import { MarkdownPreview } from './MarkdownPreview.jsx';
+import { ImportDialog } from './ImportDialog.jsx';
 
 const loadMarkdownEditor = () => import('../editor/MarkdownEditor.jsx').then((module) => ({ default: module.MarkdownEditor }));
 const MarkdownEditor = lazy(loadMarkdownEditor);
@@ -28,6 +29,8 @@ export function VaultFilesPanel({ slug, defaultFileRoot = 'Obsidian Vault' }) {
   const [lockStatus, setLockStatus] = useState('idle');
   const [viewMode, setViewMode] = useState(() => viewModeFromLocation());
   const [filesCollapsed, setFilesCollapsed] = useState(false);
+  const [importDialog, setImportDialog] = useState(null);
+  const fileInputRef = useRef(null);
   const sessionRef = useRef(null);
 
   useEffect(() => () => {
@@ -378,6 +381,93 @@ export function VaultFilesPanel({ slug, defaultFileRoot = 'Obsidian Vault' }) {
     } catch {
       setMessage(t('fileLoadFailed'));
     }
+  }
+
+  function handleImportPick() {
+    fileInputRef.current?.click();
+  }
+
+  async function handleImportFiles(event) {
+    const files = [...(event.target.files || [])];
+    event.target.value = '';
+    if (!files.length) return;
+    const candidates = await Promise.all(files.map(async (file) => {
+      const relative = file.webkitRelativePath || file.name;
+      const text = await safeReadText(file);
+      if (text === null) return null;
+      return { path: joinPath(path, relative.split('/').filter(Boolean).join('/')), name: relative.split('/').filter(Boolean).pop() || file.name, content: text };
+    }));
+    const importItems = candidates.filter(Boolean);
+    if (!importItems.length) {
+      setMessage(t('importNoTextFiles'));
+      return;
+    }
+    const existing = await collectExistingPaths(importItems);
+    const conflicts = importItems.filter((item) => existing.has(item.path));
+    if (conflicts.length) {
+      setImportDialog({ items: importItems, existing, conflictCount: conflicts.length });
+      return;
+    }
+    await runImport(importItems, existing, 'rename');
+  }
+
+  async function handleImportApply(policy) {
+    const dialog = importDialog;
+    setImportDialog(null);
+    await runImport(dialog.items, dialog.existing, policy);
+  }
+
+  async function runImport(items, existing, policy) {
+    setMessage(t('importInProgress'));
+    const used = new Set([...existing]);
+    const stats = { created: 0, renamed: 0, skipped: 0 };
+    try {
+      for (const item of items) {
+        if (used.has(item.path)) {
+          if (policy === 'skip') {
+            await loadDirectory(parentPathFor(item.path) || '.', { force: true });
+            stats.skipped += 1;
+            continue;
+          }
+          if (policy === 'rename') {
+            const targetPath = uniquePath(item.path, used);
+            used.add(targetPath);
+            await createFile(slug, targetPath, item.content);
+            await loadDirectory(parentPathFor(targetPath) || '.', { force: true });
+            stats.renamed += 1;
+            continue;
+          }
+          await writeFileContent(slug, item.path, item.content);
+          used.add(item.path);
+          await loadDirectory(parentPathFor(item.path) || '.', { force: true });
+          stats.created += 1;
+          continue;
+        }
+        await createFile(slug, item.path, item.content);
+        used.add(item.path);
+        await loadDirectory(parentPathFor(item.path) || '.', { force: true });
+        stats.created += 1;
+      }
+      setMessage(t('importDone').replace('{created}', String(stats.created)).replace('{renamed}', String(stats.renamed)).replace('{skipped}', String(stats.skipped)));
+    } catch {
+      setMessage(t('importFailed'));
+    }
+  }
+
+  async function collectExistingPaths(items) {
+    const existing = new Set();
+    const directories = new Set(items.map((item) => parentPathFor(item.path) || '.'));
+    for (const directoryPath of directories) {
+      try {
+        const payload = await listFiles(slug, directoryPath);
+        for (const entry of payload.entries || []) {
+          existing.add(entry.path);
+        }
+      } catch {
+        // Directory may not exist yet; importing will create it.
+      }
+    }
+    return existing;
   }
 
   async function handleCreateDefaultRoot() {
@@ -732,6 +822,11 @@ export function VaultFilesPanel({ slug, defaultFileRoot = 'Obsidian Vault' }) {
               <FolderPlus size={16} aria-hidden="true" />
               <span className="sr-only">{t('createFolder')}</span>
             </button>
+            <button type="button" className="icon-button" onClick={handleImportPick} disabled={!currentDirectoryAvailable} title={t('importNotes')}>
+              <Upload size={16} aria-hidden="true" />
+              <span className="sr-only">{t('importNotes')}</span>
+            </button>
+            <input ref={fileInputRef} type="file" className="sr-only" multiple webkitdirectory="" accept=".md,.markdown,.txt,text/plain" onChange={handleImportFiles} aria-label={t('importNotes')} />
             {pendingMoveEntry && canMoveToDirectory(pendingMoveEntry, path || '.') ? (
               <button type="button" className="icon-button" onClick={() => handleMoveEntry(pendingMoveEntry, path || '.')} title={`${t('moveHere')}: ${path === '.' ? '/' : path}`}>
                 <FolderInput size={16} aria-hidden="true" />
@@ -769,6 +864,7 @@ export function VaultFilesPanel({ slug, defaultFileRoot = 'Obsidian Vault' }) {
           />
         </section>
       </div>
+      {importDialog ? <ImportDialog conflictCount={importDialog.conflictCount} onApply={handleImportApply} onCancel={() => setImportDialog(null)} /> : null}
     </section>
   );
 }
@@ -838,6 +934,37 @@ function sortEntries(entries, language) {
 
 function isMarkdown(name) {
   return /\.md(?:own)?$/i.test(name);
+}
+
+function safeReadText(file) {
+  return file.text().then(sanitizeImportText).catch(() => null);
+}
+
+function sanitizeImportText(text) {
+  const firstNull = text.indexOf('\u0000');
+  if (firstNull !== -1) {
+    return null;
+  }
+  if (text.length > 2_000_000) {
+    return null;
+  }
+  return text;
+}
+
+function uniquePath(desiredPath, used) {
+  if (!used.has(desiredPath)) {
+    return desiredPath;
+  }
+  const extensionIndex = desiredPath.lastIndexOf('.');
+  const base = extensionIndex > 0 ? desiredPath.slice(0, extensionIndex) : desiredPath;
+  const extension = extensionIndex > 0 ? desiredPath.slice(extensionIndex) : '';
+  let counter = 1;
+  let candidate = `${base} (${counter})${extension}`;
+  while (used.has(candidate)) {
+    counter += 1;
+    candidate = `${base} (${counter})${extension}`;
+  }
+  return candidate;
 }
 
 function ensureMarkdownExtension(name) {

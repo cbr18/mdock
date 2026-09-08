@@ -12,6 +12,21 @@ export function getCommitDetails(slug, hash) {
   return api(`/api/vaults/${encodeURIComponent(slug)}/git/commits/${encodeURIComponent(hash)}`);
 }
 
+export function restoreFile(slug, hash, path) {
+  return api(`/api/vaults/${encodeURIComponent(slug)}/git/restore`, {
+    method: 'POST',
+    body: JSON.stringify({ hash, path })
+  });
+}
+
+export function createSnapshot(slug) {
+  return api(`/api/vaults/${encodeURIComponent(slug)}/git/snapshot`, { method: 'POST' });
+}
+
+export function listSnapshots(slug) {
+  return api(`/api/vaults/${encodeURIComponent(slug)}/git/snapshots`);
+}
+
 export function getRemote(slug) {
   return api(`/api/vaults/${encodeURIComponent(slug)}/git/remote`);
 }

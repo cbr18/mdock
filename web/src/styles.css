@@ -1743,7 +1743,7 @@ legend {
 
 .changed-file-row {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
+  grid-template-columns: 44px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   min-width: 0;
@@ -1920,4 +1920,74 @@ legend {
     left: 0;
     width: min(260px, calc(100vw - 32px));
   }
+}
+
+.commit-day-group {
+  display: grid;
+  gap: 6px;
+}
+
+.commit-day-header {
+  margin: 0 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: none;
+}
+
+.vault-activity-wrap {
+  display: grid;
+  gap: 16px;
+}
+
+.snapshot-list {
+  margin-top: 8px;
+}
+
+.import-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: color-mix(in srgb, var(--bg) 72%, #000000);
+  display: grid;
+  place-items: center;
+}
+
+.import-dialog {
+  width: min(440px, calc(100vw - 32px));
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+  outline: none;
+}
+
+.import-dialog h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.import-policy-fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.import-policy-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.import-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
