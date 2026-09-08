@@ -70,6 +70,101 @@ func TestClientInitCommitAndRecovery(t *testing.T) {
 	}
 }
 
+func TestClientRestoreFileFromCommit(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	client := NewClient("git")
+	if err := client.InitIfNeeded(ctx, repo); err != nil {
+		t.Fatalf("InitIfNeeded() error = %v", err)
+	}
+	if err := client.EnsureMainBranch(ctx, repo); err != nil {
+		t.Fatalf("EnsureMainBranch() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "note.md"), []byte("version one"), 0o644); err != nil {
+		t.Fatalf("WriteFile(one) error = %v", err)
+	}
+	if err := client.Add(ctx, repo, nil); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+	committed, err := client.Commit(ctx, repo, "sync: update 1 file")
+	if err != nil {
+		t.Fatalf("Commit(one) error = %v", err)
+	}
+	if !committed {
+		t.Fatal("Commit(one) committed = false")
+	}
+	commits, err := client.Log(ctx, repo, 10)
+	if err != nil {
+		t.Fatalf("Log() error = %v", err)
+	}
+	if len(commits) != 1 {
+		t.Fatalf("commit count = %d, want 1", len(commits))
+	}
+	firstHash := commits[0].Hash
+
+	if err := os.WriteFile(filepath.Join(repo, "note.md"), []byte("version two"), 0o644); err != nil {
+		t.Fatalf("WriteFile(two) error = %v", err)
+	}
+	if err := client.Add(ctx, repo, nil); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+	committed, err = client.Commit(ctx, repo, "sync: update 1 file")
+	if err != nil {
+		t.Fatalf("Commit(two) error = %v", err)
+	}
+	if !committed {
+		t.Fatal("Commit(two) committed = false")
+	}
+
+	if err := client.RestoreFile(ctx, repo, firstHash, "note.md"); err != nil {
+		t.Fatalf("RestoreFile() error = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(repo, "note.md"))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if string(data) != "version one" {
+		t.Fatalf("restored content = %q, want %q", data, "version one")
+	}
+	if err := client.RestoreFile(ctx, repo, "not-a-hash", "note.md"); err == nil {
+		t.Fatal("RestoreFile(invalid hash) succeeded")
+	}
+}
+
+func TestClientTagCreateAndList(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	client := NewClient("git")
+	if err := client.InitIfNeeded(ctx, repo); err != nil {
+		t.Fatalf("InitIfNeeded() error = %v", err)
+	}
+	if err := client.EnsureMainBranch(ctx, repo); err != nil {
+		t.Fatalf("EnsureMainBranch() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "note.md"), []byte("hello"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := client.Add(ctx, repo, nil); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+	if _, err := client.Commit(ctx, repo, "sync: update 1 file"); err != nil {
+		t.Fatalf("Commit() error = %v", err)
+	}
+	if err := client.CreateTag(ctx, repo, "pre-sync-1234567890"); err != nil {
+		t.Fatalf("CreateTag() error = %v", err)
+	}
+	if err := client.CreateTag(ctx, repo, "bad tag!"); err == nil {
+		t.Fatal("CreateTag(invalid name) succeeded")
+	}
+	tags, err := client.Tags(ctx, repo)
+	if err != nil {
+		t.Fatalf("Tags() error = %v", err)
+	}
+	if len(tags) != 1 || tags[0] != "pre-sync-1234567890" {
+		t.Fatalf("tags = %+v, want [pre-sync-1234567890]", tags)
+	}
+}
+
 func TestClientPushToBareRemote(t *testing.T) {
 	ctx := context.Background()
 	repo := t.TempDir()

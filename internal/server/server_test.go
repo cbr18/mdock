@@ -859,3 +859,146 @@ func loginStatus(t *testing.T, srv *Server, username, password string) int {
 	srv.Handler().ServeHTTP(login, req)
 	return login.Code
 }
+
+func TestGitRestoreAndSnapshot(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer st.Close()
+	vaultsRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("EvalSymlinks() error = %v", err)
+	}
+	srv, err := New(config.Config{
+		VaultsRoot:     vaultsRoot,
+		GitBin:         "git",
+		SessionTTL:     time.Hour,
+		CommitDebounce: 10 * time.Millisecond,
+		LockTTL:        time.Hour,
+	}, st, slog.Default())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]string{"username": "alice", "password": "secret"})
+	register := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(body))
+	srv.Handler().ServeHTTP(register, req)
+	if register.Code != http.StatusCreated {
+		t.Fatalf("register status = %d body=%s", register.Code, register.Body.String())
+	}
+	cookies := register.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatal("expected session cookie")
+	}
+
+	createBody, _ := json.Marshal(map[string]string{"name": "Work Notes"})
+	create := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/vaults", bytes.NewReader(createBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(create, req)
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create vault status = %d body=%s", create.Code, create.Body.String())
+	}
+
+	writeBody, _ := json.Marshal(map[string]string{"path": "notes/note.md", "content": "version one"})
+	write := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/vaults/work-notes/files/content", bytes.NewReader(writeBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(write, req)
+	if write.Code != http.StatusOK {
+		t.Fatalf("write file status = %d body=%s", write.Code, write.Body.String())
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	commits := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/git/commits?limit=5", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(commits, req)
+	if commits.Code != http.StatusOK {
+		t.Fatalf("git commits status = %d body=%s", commits.Code, commits.Body.String())
+	}
+	var commitsResponse struct {
+		Commits []struct {
+			Hash string `json:"hash"`
+		} `json:"commits"`
+	}
+	if err := json.Unmarshal(commits.Body.Bytes(), &commitsResponse); err != nil {
+		t.Fatalf("decode git commits: %v", err)
+	}
+	if len(commitsResponse.Commits) == 0 {
+		t.Fatal("expected at least one git commit")
+	}
+	firstHash := commitsResponse.Commits[0].Hash
+
+	writeBody, _ = json.Marshal(map[string]string{"path": "notes/note.md", "content": "version two"})
+	write = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/vaults/work-notes/files/content", bytes.NewReader(writeBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(write, req)
+	if write.Code != http.StatusOK {
+		t.Fatalf("write file status = %d body=%s", write.Code, write.Body.String())
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	content := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/files/content?path=notes/note.md", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(content, req)
+	if content.Code != http.StatusOK || !strings.Contains(content.Body.String(), "version two") {
+		t.Fatalf("file content after second write status = %d body=%s", content.Code, content.Body.String())
+	}
+
+	restoreBody, _ := json.Marshal(map[string]string{"hash": firstHash, "path": "notes/note.md"})
+	restore := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/git/restore", bytes.NewReader(restoreBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(restore, req)
+	if restore.Code != http.StatusOK {
+		t.Fatalf("restore status = %d body=%s", restore.Code, restore.Body.String())
+	}
+
+	content = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/files/content?path=notes/note.md", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(content, req)
+	if content.Code != http.StatusOK || !strings.Contains(content.Body.String(), "version one") || strings.Contains(content.Body.String(), "version two") {
+		t.Fatalf("file content after restore status = %d body=%s", content.Code, content.Body.String())
+	}
+
+	badRestoreBody, _ := json.Marshal(map[string]string{"hash": "not-a-hash", "path": "notes/note.md"})
+	badRestore := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/git/restore", bytes.NewReader(badRestoreBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(badRestore, req)
+	if badRestore.Code != http.StatusBadRequest {
+		t.Fatalf("bad restore status = %d body=%s", badRestore.Code, badRestore.Body.String())
+	}
+
+	missingBody, _ := json.Marshal(map[string]string{"hash": firstHash})
+	missingRestore := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/git/restore", bytes.NewReader(missingBody))
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(missingRestore, req)
+	if missingRestore.Code != http.StatusBadRequest {
+		t.Fatalf("missing field restore status = %d body=%s", missingRestore.Code, missingRestore.Body.String())
+	}
+
+	snapshot := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/vaults/work-notes/git/snapshot", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(snapshot, req)
+	if snapshot.Code != http.StatusOK || !strings.Contains(snapshot.Body.String(), "pre-sync-") {
+		t.Fatalf("snapshot status = %d body=%s", snapshot.Code, snapshot.Body.String())
+	}
+
+	snapshots := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/vaults/work-notes/git/snapshots", nil)
+	addSessionAuth(req, cookies)
+	srv.Handler().ServeHTTP(snapshots, req)
+	if snapshots.Code != http.StatusOK || !strings.Contains(snapshots.Body.String(), "pre-sync-") {
+		t.Fatalf("snapshots list status = %d body=%s", snapshots.Code, snapshots.Body.String())
+	}
+}

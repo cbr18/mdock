@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -13,6 +14,11 @@ import (
 
 type setGitRemoteRequest struct {
 	URL string `json:"url"`
+}
+
+type restoreGitRequest struct {
+	Hash string `json:"hash"`
+	Path string `json:"path"`
 }
 
 func (h *Handler) gitStatus(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +74,45 @@ func (h *Handler) gitRemote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"vault": item, "remote_url": item.RemoteURL, "last_push_at": item.LastPushAt, "last_push_error": item.LastPushError})
+}
+
+func (h *Handler) restoreGitFile(w http.ResponseWriter, r *http.Request) {
+	var req restoreGitRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.Hash) == "" || strings.TrimSpace(req.Path) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "hash_and_path_required"})
+		return
+	}
+	user := userFromContext(r.Context())
+	item, info, err := h.app.RestoreFileFromCommit(r.Context(), user.ID, chi.URLParam(r, "slug"), req.Hash, req.Path, webLockOwner(r, user.ID, ""))
+	if errors.Is(err, app.ErrInvalidCommitHash) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_commit_hash"})
+		return
+	}
+	if h.handleFileError(w, "restore file from commit", err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"vault": item, "file": info})
+}
+
+func (h *Handler) createSnapshot(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
+	item, tag, err := h.app.CreateSnapshot(r.Context(), user.ID, chi.URLParam(r, "slug"))
+	if h.handleVaultError(w, r, "create snapshot", err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"vault": item, "tag": tag})
+}
+
+func (h *Handler) listSnapshots(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
+	item, tags, err := h.app.SnapshotTags(r.Context(), user.ID, chi.URLParam(r, "slug"))
+	if h.handleVaultError(w, r, "list snapshots", err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"vault": item, "snapshots": tags})
 }
 
 func (h *Handler) setGitRemote(w http.ResponseWriter, r *http.Request) {

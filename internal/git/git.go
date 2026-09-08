@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,8 @@ import (
 	"sync"
 	"time"
 )
+
+var ErrInvalidHash = errors.New("invalid commit hash")
 
 type Client struct {
 	bin string
@@ -250,6 +253,43 @@ func (c *Client) RecoveryCommit(ctx context.Context, repoPath string) (bool, err
 	return c.Commit(ctx, repoPath, "recovery: uncommitted changes on startup")
 }
 
+func (c *Client) RestoreFile(ctx context.Context, repoPath, hash, relPath string) error {
+	if !validCommitHash(hash) {
+		return ErrInvalidHash
+	}
+	if relPath == "" || relPath == "." {
+		return ErrInvalidHash
+	}
+	if _, err := c.run(ctx, repoPath, "checkout", hash, "--", relPath); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Client) CreateTag(ctx context.Context, repoPath, name string) error {
+	if !validTagName(name) {
+		return fmt.Errorf("invalid tag name")
+	}
+	if _, err := c.run(ctx, repoPath, "tag", name); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Client) Tags(ctx context.Context, repoPath string) ([]string, error) {
+	out, err := c.run(ctx, repoPath, "tag", "--list", "pre-sync-*", "--sort=-creatordate")
+	if err != nil {
+		return nil, err
+	}
+	tags := []string{}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if strings.TrimSpace(line) != "" {
+			tags = append(tags, strings.TrimSpace(line))
+		}
+	}
+	return tags, nil
+}
+
 func (c *Client) run(ctx context.Context, repoPath string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, c.bin, args...)
 	cmd.Dir = repoPath
@@ -268,6 +308,19 @@ func validCommitHash(hash string) bool {
 	}
 	for _, char := range hash {
 		if (char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validTagName(name string) bool {
+	if name == "" || len(name) > 64 {
+		return false
+	}
+	for _, char := range name {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '_' || char == '-' || char == '.' {
 			continue
 		}
 		return false

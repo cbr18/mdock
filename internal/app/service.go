@@ -59,6 +59,7 @@ var (
 	ErrLastActiveAdmin     = errors.New("last active admin")
 	ErrBinaryFile          = errors.New("binary file")
 	ErrInvalidFilePath     = errors.New("invalid file path")
+	ErrInvalidCommitHash   = errors.New("invalid commit hash")
 )
 
 func New(cfg config.Config, st *store.Store, logger *slog.Logger) (*Service, error) {
@@ -441,6 +442,61 @@ func (s *Service) GitCommitDetails(ctx context.Context, userID int64, vaultSlug,
 		return store.Vault{}, appgit.CommitDetails{}, err
 	}
 	return item, details, nil
+}
+
+func (s *Service) RestoreFileFromCommit(ctx context.Context, userID int64, vaultSlug, hash, relPath, owner string) (store.Vault, vault.Info, error) {
+	item, rel, err := s.fileMutationContext(ctx, userID, vaultSlug, relPath, false)
+	if err != nil {
+		return store.Vault{}, vault.Info{}, err
+	}
+	root, err := s.vaultService.EnsureVault(item.Path)
+	if err != nil {
+		return store.Vault{}, vault.Info{}, err
+	}
+	restore := func() error {
+		return s.gitClient.RestoreFile(ctx, root, hash, rel)
+	}
+	if err := s.withFileMutationLock(ctx, item, rel, owner, restore); err != nil {
+		if errors.Is(err, appgit.ErrInvalidHash) {
+			return store.Vault{}, vault.Info{}, ErrInvalidCommitHash
+		}
+		return store.Vault{}, vault.Info{}, err
+	}
+	if err := s.enqueueVaultChange(ctx, item, []string{rel}); err != nil {
+		return store.Vault{}, vault.Info{}, err
+	}
+	info, err := s.vaultService.Stat(item.Path, rel)
+	if err != nil {
+		return store.Vault{}, vault.Info{}, err
+	}
+	return item, info, nil
+}
+
+func (s *Service) CreateSnapshot(ctx context.Context, userID int64, vaultSlug string) (store.Vault, string, error) {
+	item, root, queue, err := s.gitContext(ctx, userID, vaultSlug)
+	if err != nil {
+		return store.Vault{}, "", err
+	}
+	if err := queue.Flush(ctx); err != nil {
+		return store.Vault{}, "", err
+	}
+	name := "pre-sync-" + strconv.FormatInt(time.Now().Unix(), 10)
+	if err := s.gitClient.CreateTag(ctx, root, name); err != nil {
+		return store.Vault{}, "", err
+	}
+	return item, name, nil
+}
+
+func (s *Service) SnapshotTags(ctx context.Context, userID int64, vaultSlug string) (store.Vault, []string, error) {
+	item, root, _, err := s.gitContext(ctx, userID, vaultSlug)
+	if err != nil {
+		return store.Vault{}, nil, err
+	}
+	tags, err := s.gitClient.Tags(ctx, root)
+	if err != nil {
+		return store.Vault{}, nil, err
+	}
+	return item, tags, nil
 }
 
 func (s *Service) ListFiles(ctx context.Context, userID int64, vaultSlug, relPath string) (store.Vault, []vault.Entry, error) {

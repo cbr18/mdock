@@ -351,7 +351,55 @@ Response:
 }
 ```
 
-`hash` принимает только hex commit hash/prefix. Restore из коммита не входит в текущий API.
+`hash` принимает только hex commit hash/prefix.
+
+### `POST /api/vaults/{slug}/git/restore`
+
+Восстанавливает один файл из коммита. Контент файла возвращается из указанного коммита в рабочее дерево, после чего создаётся новый коммит (`sync(web): update 1 file`). История не переписывается.
+
+Request:
+
+```json
+{
+  "hash": "abcdef123456",
+  "path": "note.md"
+}
+```
+
+Поведение:
+
+- `hash` — только hex commit hash/prefix, иначе `400 invalid_commit_hash`;
+- `path` — vault-safe относительный путь (без `.git`, traversal);
+- восстановление уважает активные file locks (`423 locked`);
+- новый коммит появится в `GET .../git/commits`.
+
+### `POST /api/vaults/{slug}/git/snapshot`
+
+Создаёт лёгкий git-тег `pre-sync-<unix-timestamp>` на текущем состоянии vault. Перед созданием git queue flush'ится, поэтому тег включает все незакоммиченные изменения.
+
+Response:
+
+```json
+{
+  "vault": {},
+  "tag": "pre-sync-1750000000"
+}
+```
+
+Тег не является веткой и не влияет на sync.
+
+### `GET /api/vaults/{slug}/git/snapshots`
+
+Список существующих снимков (`pre-sync-*`), отсортированных от новых к старым.
+
+Response:
+
+```json
+{
+  "vault": {},
+  "snapshots": ["pre-sync-1750000000"]
+}
+```
 
 ### `GET /api/vaults/{slug}/git/remote`
 
