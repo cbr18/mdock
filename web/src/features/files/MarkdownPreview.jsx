@@ -2,9 +2,10 @@ import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkFrontmatter from 'remark-frontmatter';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import { useLanguage } from '../i18n/LanguageProvider.jsx';
 
-export const markdownRemarkPlugins = [remarkGfm, remarkFrontmatter];
+export const markdownRemarkPlugins = [remarkGfm, remarkFrontmatter, remarkBreaks];
 export const markdownRehypePlugins = [rehypeHighlight];
 
 export function MarkdownPreview({ content }) {
