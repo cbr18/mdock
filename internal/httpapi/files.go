@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -52,7 +53,25 @@ func (h *Handler) readFileContent(w http.ResponseWriter, r *http.Request) {
 	if h.handleFileError(w, "read file content", err) {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"vault": item, "file": info, "content": content})
+
+	// Parse ModTime to Unix timestamp in milliseconds
+	var modifiedAt int64
+	if info.ModTime != "" {
+		if t, err := time.Parse(time.RFC3339Nano, info.ModTime); err == nil {
+			modifiedAt = t.UnixMilli()
+		}
+	}
+
+	// Version: use ModTime as version for now (can be enhanced with content hash later)
+	version := info.ModTime
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"vault":      item,
+		"file":       info,
+		"content":    content,
+		"modified_at": modifiedAt,
+		"version":    version,
+	})
 }
 
 func (h *Handler) createFile(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +105,21 @@ func (h *Handler) writeFileContent(w http.ResponseWriter, r *http.Request) {
 	if h.handleFileError(w, "write file content", err) {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"vault": item, "file": info})
+
+	var modifiedAt int64
+	if info.ModTime != "" {
+		if t, err := time.Parse(time.RFC3339Nano, info.ModTime); err == nil {
+			modifiedAt = t.UnixMilli()
+		}
+	}
+	version := info.ModTime
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"vault":       item,
+		"file":        info,
+		"modified_at": modifiedAt,
+		"version":     version,
+	})
 }
 
 func (h *Handler) createDir(w http.ResponseWriter, r *http.Request) {
