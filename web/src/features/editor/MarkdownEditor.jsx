@@ -1,7 +1,7 @@
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { EditorState } from '@codemirror/state';
-import { EditorView } from '@codemirror/view';
+import { EditorView, keymap } from '@codemirror/view';
 import {
   Bold,
   Braces,
@@ -29,6 +29,9 @@ import { useLanguage } from '../i18n/LanguageProvider.jsx';
 import { useTheme } from '../theme/ThemeProvider.jsx';
 import { livePreviewExtension } from './livePreviewExtension.js';
 import { applyCommandToView, COMMANDS, initialFormValues } from './toolbarActions.js';
+
+const MAC = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+const MOD = MAC ? 'Meta' : 'Ctrl';
 
 const PARAM_LABEL_KEYS = {
   url: 'formUrl',
@@ -73,8 +76,19 @@ export function MarkdownEditor({ value, dirty, lockStatus, readOnly = false, sav
     if (variant === 'live') {
       items.push(livePreviewExtension({ frontmatterLabel: t('frontmatter') }), EditorView.editorAttributes.of({ class: 'cm-live-preview' }));
     }
+    // Keyboard shortcuts
+    items.push(keymap.of([
+      // Save
+      { key: `${MOD}-s`, run: (view) => { if (onSave) { onSave(); return true; } return false; }, preventDefault: true },
+      // Undo/Redo (handled by history extension)
+      { key: `${MOD}-z`, run: (view) => { view.dispatch({ effects: EditorView.undo.of(true) }); return true; } },
+      { key: `${MOD}-y`, run: (view) => { view.dispatch({ effects: EditorView.redo.of(true) }); return true; } },
+      { key: `Shift-${MOD}-z`, run: (view) => { view.dispatch({ effects: EditorView.redo.of(true) }); return true; } },
+      // Select All
+      { key: `${MOD}-a`, run: (view) => { view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } }); return true; } },
+    ]));
     return items;
-  }, [readOnly, t, variant]);
+  }, [readOnly, t, variant, onSave]);
   const codeMirrorTheme = theme === 'light' || theme === 'warm' ? 'light' : 'dark';
 
   function runCommand(key, values = {}) {
