@@ -6,6 +6,7 @@ import {
   releaseFileLockKeepalive,
   writeFileContent
 } from '../../api/files.js';
+import { saveDraft, deleteDraft } from '../../api/draftStorage.js';
 
 export function createFileEditorSession({
   slug,
@@ -14,16 +15,22 @@ export function createFileEditorSession({
   heartbeatMs = 15000,
   owner = createEditorOwnerToken(),
   timers = defaultTimers(),
-  onHeartbeatError = () => {}
+  onHeartbeatError = () => {},
+  onConflict = () => {}
 }) {
   let heartbeatID = null;
   let opened = false;
+  let lastServerContent = '';
+  let lastServerVersion = null;
+  let pendingHeartbeat = null;
 
   async function open() {
     await api.acquireFileLock(slug, path, owner);
     opened = true;
     try {
       const payload = await api.readFileContent(slug, path);
+      lastServerContent = payload.content ?? '';
+      lastServerVersion = payload.modified_at ?? payload.version ?? null;
       startHeartbeat();
       return payload;
     } catch (error) {
@@ -38,7 +45,25 @@ export function createFileEditorSession({
       opened = true;
       startHeartbeat();
     }
-    return api.writeFileContent(slug, path, content, owner);
+    try {
+      const result = await api.writeFileContent(slug, path, content, owner);
+      lastServerContent = content;
+      lastServerVersion = result.modified_at ?? result.version ?? null;
+      deleteDraft(slug, path);
+      return result;
+    } catch (error) {
+      const status = error?.response?.status ?? error?.status;
+      if (status === 409 || status === 423) {
+        const draft = saveDraft(slug, path, content, lastServerVersion, lastServerContent);
+        const conflictError = new Error('Conflict');
+        conflictError.code = 'conflict';
+        conflictError.draft = draft;
+        conflictError.serverStatus = status;
+        onConflict(conflictError);
+        throw conflictError;
+      }
+      throw error;
+    }
   }
 
   async function close() {
@@ -57,20 +82,41 @@ export function createFileEditorSession({
 
   function startHeartbeat() {
     stopHeartbeat();
-    heartbeatID = timers.setInterval(async () => {
-      try {
-        await api.heartbeatFileLock(slug, path, owner);
-      } catch (error) {
+    scheduleHeartbeat();
+  }
+
+  function scheduleHeartbeat() {
+    if (pendingHeartbeat) return;
+    if (!opened) return;
+
+    // Set heartbeatID to a sentinel so stopHeartbeat can clear it
+    heartbeatID = 'pending';
+    pendingHeartbeat = api.heartbeatFileLock(slug, path, owner);
+    pendingHeartbeat
+      .catch((error) => {
         onHeartbeatError(error);
-        stopHeartbeat();
-      }
-    }, heartbeatMs);
+        const status = error?.response?.status ?? error?.status;
+        if (status === 409 || status === 423) {
+          stopHeartbeat();
+          opened = false;
+        }
+      })
+      .finally(() => {
+        pendingHeartbeat = null;
+        if (opened) {
+          heartbeatID = timers.setTimeout(scheduleHeartbeat, heartbeatMs);
+        } else {
+          heartbeatID = null;
+        }
+      });
   }
 
   function stopHeartbeat() {
-    if (heartbeatID === null) return;
-    timers.clearInterval(heartbeatID);
+    if (heartbeatID !== null && heartbeatID !== 'pending') {
+      timers.clearTimeout(heartbeatID);
+    }
     heartbeatID = null;
+    pendingHeartbeat = null;
   }
 
   return {
@@ -94,8 +140,8 @@ const defaultFilesAPI = {
 
 function defaultTimers() {
   return {
-    setInterval: window.setInterval.bind(window),
-    clearInterval: window.clearInterval.bind(window)
+    setTimeout: window.setTimeout.bind(window),
+    clearTimeout: window.clearTimeout.bind(window)
   };
 }
 
