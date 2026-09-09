@@ -5,8 +5,47 @@ import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import { markdownRehypePlugins, markdownRemarkPlugins, splitFrontmatter } from '../files/MarkdownPreview.jsx';
 
+function commitLineBreak(view, separator, setActiveBlock) {
+  const selection = view.state.selection.main;
+  const from = Math.min(selection.from, selection.to);
+  const to = Math.max(selection.from, selection.to);
+  const insert = isCaretInsideFence(view.state) ? '\n' : separator;
+  console.log('[commitLineBreak] from=', from, 'to=', to, 'insert=', JSON.stringify(insert));
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: { anchor: from + insert.length },
+    scrollIntoView: true,
+    userEvent: 'input',
+    effects: [setActiveBlock.of(null)]
+  });
+  const docAfter = view.state.doc.toString();
+  console.log('[commitLineBreak] after dispatch, doc length=', docAfter.length, 'doc=', JSON.stringify(docAfter));
+  return true;
+}
+
+function isCaretInsideFence(state) {
+  const position = state.selection.main.head;
+  const blocks = splitBlocks(state.doc.toString());
+  return blocks.some((block) => block.type === 'code' && position >= block.from && position <= block.to);
+}
+
+function createHandleEnter(setActiveBlock) {
+  return (view) => {
+    console.log('[handleEnter] called');
+    return commitLineBreak(view, '\n\n', setActiveBlock);
+  };
+}
+
+function createHandleSoftEnter(setActiveBlock) {
+  return (view) => {
+    return commitLineBreak(view, '\n', setActiveBlock);
+  };
+}
+
 export function livePreviewExtension({ frontmatterLabel = 'Frontmatter' } = {}) {
   const setActiveBlock = StateEffect.define();
+  const handleEnter = createHandleEnter(setActiveBlock);
+  const handleSoftEnter = createHandleSoftEnter(setActiveBlock);
 
   const field = StateField.define({
     create(state) {
@@ -83,38 +122,10 @@ function moveLogicalLine(direction) {
 
     const nextLine = view.state.doc.line(nextNumber);
     const column = selection.head - currentLine.from;
-    const nextHead = nextLine.from + Math.min(column, nextLine.length);
+const nextHead = nextLine.from + Math.min(column, nextLine.length);
     view.dispatch({ selection: { anchor: nextHead }, scrollIntoView: true, userEvent: 'select' });
     return true;
   };
-}
-
-function handleEnter(view) {
-  return commitLineBreak(view, '\n\n');
-}
-
-function handleSoftEnter(view) {
-  return commitLineBreak(view, '\n');
-}
-
-function commitLineBreak(view, separator) {
-  const selection = view.state.selection.main;
-  const from = Math.min(selection.from, selection.to);
-  const to = Math.max(selection.from, selection.to);
-  const insert = isCaretInsideFence(view.state) ? '\n' : separator;
-  view.dispatch({
-    changes: { from, to, insert },
-    selection: { anchor: from + insert.length },
-    scrollIntoView: true,
-    userEvent: 'input'
-  });
-  return true;
-}
-
-function isCaretInsideFence(state) {
-  const position = state.selection.main.head;
-  const blocks = splitBlocks(state.doc.toString());
-  return blocks.some((block) => block.type === 'code' && position >= block.from && position <= block.to);
 }
 
 function buildStateValue(state, frontmatterLabel, activeBlock, setActiveBlock) {
@@ -418,6 +429,7 @@ class RenderedMarkdownBlockWidget extends WidgetType {
     container.className = `cm-live-rendered-block cm-live-rendered-${this.block.type}`;
     container.addEventListener('mousedown', (event) => {
       event.preventDefault();
+      event.stopPropagation();
       view.dispatch({
         selection: { anchor: this.block.sourceTo ?? this.block.to },
         effects: this.setActiveBlock.of(activeBlockRange(this.block)),
@@ -425,7 +437,7 @@ class RenderedMarkdownBlockWidget extends WidgetType {
       });
       requestLivePreviewMeasure(view);
       view.focus();
-    });
+    }, { capture: true });
 
     const root = createRoot(container);
     container.__mdockLiveRoot = root;
@@ -480,6 +492,7 @@ class RenderedMarkdownDocumentWidget extends WidgetType {
       const block = this.blockFromEventTarget(container, event.target);
       if (!block) return;
       event.preventDefault();
+      event.stopPropagation();
       view.dispatch({
         selection: { anchor: block.sourceTo ?? block.to },
         effects: this.setActiveBlock.of(activeBlockRange(block)),
@@ -487,7 +500,7 @@ class RenderedMarkdownDocumentWidget extends WidgetType {
       });
       requestLivePreviewMeasure(view);
       view.focus();
-    });
+    }, { capture: true });
 
     const root = createRoot(container);
     container.__mdockLiveRoot = root;
@@ -505,12 +518,19 @@ class RenderedMarkdownDocumentWidget extends WidgetType {
 
   blockFromEventTarget(container, target) {
     const preview = container.querySelector('.markdown-preview');
-    if (!preview || !(target instanceof Element)) return this.blocks[0] ?? null;
+    if (!preview || !(target instanceof Element)) {
+      console.log('[blockFromEventTarget] no preview or not element, returning blocks[0]');
+      return this.blocks[0] ?? null;
+    }
 
     const child = target.closest('.markdown-preview > *');
-    if (!child) return this.blocks[0] ?? null;
+    if (!child) {
+      console.log('[blockFromEventTarget] no child found, returning blocks[0]');
+      return this.blocks[0] ?? null;
+    }
 
     const index = Array.from(preview.children).indexOf(child);
+    console.log('[blockFromEventTarget] index=', index, 'blocks.length=', this.blocks.length, 'returning block:', this.blocks[index]);
     return this.blocks[index] ?? null;
   }
 
@@ -555,8 +575,8 @@ export const __livePreviewInternals = {
   blockAtPosition,
   requestLivePreviewMeasure,
   splitBlocks,
-  handleEnter,
-  handleSoftEnter,
+  createHandleEnter,
+  createHandleSoftEnter,
   commitLineBreak,
   isCaretInsideFence
 };

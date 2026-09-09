@@ -1,7 +1,13 @@
 import { describe, expect, test, vi } from 'vitest';
+import { StateEffect } from '@codemirror/state';
 import { __livePreviewInternals } from './livePreviewExtension.js';
 
-const { activeBlockRange, splitBlocks, blockAtPosition, handleEnter, handleSoftEnter, commitLineBreak, isCaretInsideFence } = __livePreviewInternals;
+const { activeBlockRange, splitBlocks, blockAtPosition, createHandleEnter, createHandleSoftEnter, commitLineBreak, isCaretInsideFence } = __livePreviewInternals;
+
+// Mock setActiveBlock for testing
+const mockSetActiveBlock = StateEffect.define();
+const handleEnter = createHandleEnter(mockSetActiveBlock);
+const handleSoftEnter = createHandleSoftEnter(mockSetActiveBlock);
 
 function fakeView(text, selection = { from: 0, to: 0, empty: true }) {
   let doc = text;
@@ -124,7 +130,7 @@ describe('live preview Enter key handling', () => {
 
   test('commitLineBreak uses separator when not in fence', () => {
     const view = fakeView('Paragraph', { from: 9, to: 9, empty: true });
-    commitLineBreak(view, '\n\n');
+    commitLineBreak(view, '\n\n', mockSetActiveBlock);
     expect(view.dispatches[0].changes.insert).toBe('\n\n');
   });
 });
