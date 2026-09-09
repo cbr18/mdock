@@ -1,5 +1,6 @@
 import { Prec, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, EditorView, keymap, WidgetType } from '@codemirror/view';
+import { history } from '@codemirror/commands';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
@@ -84,6 +85,7 @@ export function livePreviewExtension({ frontmatterLabel = 'Frontmatter' } = {}) 
 
   return [
     field,
+    history({ minDepth: 100, joinToNextChar: /^[\w\s]*$/ }),
     Prec.highest(keymap.of([
       { key: 'ArrowUp', run: moveLogicalLine(-1) },
       { key: 'ArrowDown', run: moveLogicalLine(1) },
