@@ -1,8 +1,10 @@
 import { ChevronDown, ChevronLeft, ChevronRight, Code2, FileInput, FilePlus2, FileText, Folder, FolderInput, FolderOpen, FolderPlus, PanelLeftClose, PanelLeftOpen, Rows2, Save, Trash2, Upload } from 'lucide-react';
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { createDirectory, createFile, deletePath, listFiles, movePath, readFileContent, writeFileContent } from '../../api/files.js';
 import { StatusMessage } from '../../components/ui/StatusMessage.jsx';
 import { createFileEditorSession } from '../editor/fileEditorSession.js';
+import { saveDraft, loadDraft, deleteDraft, clearOldDrafts } from '../../api/draftStorage.js';
+import { ConflictDialog, IdleWarningDialog } from './ConflictDialog.jsx';
 import { useLanguage } from '../i18n/LanguageProvider.jsx';
 import { MarkdownPreview } from './MarkdownPreview.jsx';
 import { ImportDialog } from './ImportDialog.jsx';
@@ -30,8 +32,12 @@ export function VaultFilesPanel({ slug, defaultFileRoot = 'Obsidian Vault' }) {
   const [viewMode, setViewMode] = useState(() => viewModeFromLocation());
   const [filesCollapsed, setFilesCollapsed] = useState(false);
   const [importDialog, setImportDialog] = useState(null);
+  const [conflictDialog, setConflictDialog] = useState(null);
+  const [idleWarning, setIdleWarning] = useState(false);
   const fileInputRef = useRef(null);
   const sessionRef = useRef(null);
+  const idleTimeoutRef = useRef(null);
+  const lastActivityRef = useRef(Date.now());
 
   useEffect(() => () => {
     sessionRef.current?.close();
@@ -131,8 +137,50 @@ export function VaultFilesPanel({ slug, defaultFileRoot = 'Obsidian Vault' }) {
   }, [slug, t, language, defaultRoot]);
 
   useEffect(() => {
+    function handleActivity() {
+      lastActivityRef.current = Date.now();
+      if (idleWarning) {
+        setIdleWarning(false);
+      }
+    }
+    function checkIdle() {
+      if (editing && sessionRef.current?.isOpen() && !idleWarning) {
+        const idle = Date.now() - lastActivityRef.current;
+        if (idle >= 30 * 60 * 1000) {
+          setIdleWarning(true);
+        }
+      }
+    }
+    window.addEventListener('mousemove', handleActivity);
+    window.addEventListener('keydown', handleActivity);
+    window.addEventListener('click', handleActivity);
+    const interval = setInterval(checkIdle, 60 * 1000);
+    return () => {
+      window.removeEventListener('mousemove', handleActivity);
+      window.removeEventListener('keydown', handleActivity);
+      window.removeEventListener('click', handleActivity);
+      clearInterval(interval);
+    };
+  }, [editing, idleWarning]);
+
+  useEffect(() => {
     writeExpandedPaths(slug, expandedPaths);
   }, [slug, expandedPaths]);
+
+  function handleIdleContinue() {
+    lastActivityRef.current = Date.now();
+    setIdleWarning(false);
+  }
+
+  function handleIdleClose() {
+    if (sessionRef.current) {
+      sessionRef.current.releaseForPageHide();
+      sessionRef.current = null;
+    }
+    setEditing(false);
+    setLockStatus('idle');
+    setIdleWarning(false);
+  }
 
   async function loadDirectory(directoryPath, { force = false } = {}) {
     if (!force && treeEntries[directoryPath]) return;
@@ -200,6 +248,15 @@ export function VaultFilesPanel({ slug, defaultFileRoot = 'Obsidian Vault' }) {
     setLockStatus('idle');
     try {
       const payload = await readFileContent(slug, entry.path);
+      const draft = loadDraft(slug, entry.path);
+      if (draft && Date.now() - draft.updatedAt < 24 * 60 * 60 * 1000) {
+        // Draft exists and is less than 24h old - ask user
+        if (window.confirm(t('draftLoadPrompt').replace('{time}', formatDate(draft.updatedAt, language)))) {
+          setContent(draft.content);
+          setSavedContent(payload.content || '');
+          return;
+        }
+      }
       setContent(payload.content || '');
       setSavedContent(payload.content || '');
     } catch {
@@ -248,12 +305,27 @@ export function VaultFilesPanel({ slug, defaultFileRoot = 'Obsidian Vault' }) {
 
   async function enableEditing() {
     if (!selectedFile || !isMarkdown(selectedFile.name) || sessionRef.current) return;
+
+    // Check for existing draft
+    const existingDraft = loadDraft(slug, selectedFile.path);
+    if (existingDraft) {
+      setMessage(t('draftExists').replace('{time}', formatDate(existingDraft.updatedAt, language)));
+    }
+
     const session = createFileEditorSession({
       slug,
       path: selectedFile.path,
       onHeartbeatError: () => {
         setLockStatus('lost');
         setMessage(t('editorLockLost'));
+      },
+      onConflict: (conflictError) => {
+        setConflictDialog({
+          draft: conflictError.draft,
+          serverStatus: conflictError.serverStatus
+        });
+        setLockStatus('conflict');
+        setMessage(t('editorConflictTitle'));
       }
     });
     sessionRef.current = session;
@@ -301,6 +373,10 @@ export function VaultFilesPanel({ slug, defaultFileRoot = 'Obsidian Vault' }) {
       setLockStatus('locked');
       setMessage(t('editorSaved'));
     } catch (error) {
+      if (error.code === 'conflict') {
+        // Conflict dialog already shown by onConflict callback
+        return;
+      }
       if (error.status === 423) {
         setLockStatus('lost');
         setMessage(t('lockedByOther'));
@@ -865,6 +941,33 @@ export function VaultFilesPanel({ slug, defaultFileRoot = 'Obsidian Vault' }) {
         </section>
       </div>
       {importDialog ? <ImportDialog conflictCount={importDialog.conflictCount} onApply={handleImportApply} onCancel={() => setImportDialog(null)} /> : null}
+      {conflictDialog ? (
+        <ConflictDialog
+          onReload={() => {
+            if (sessionRef.current && conflictDialog.draft) {
+              const path = selectedFile?.path;
+              sessionRef.current.releaseForPageHide();
+              sessionRef.current = null;
+              setEditing(false);
+              setLockStatus('idle');
+              if (path) {
+                openFilePath(path, { syncURL: true });
+              }
+            }
+            setConflictDialog(null);
+          }}
+          onContinueWithDraft={() => {
+            setConflictDialog(null);
+            setLockStatus('locked');
+          }}
+        />
+      ) : null}
+      {idleWarning ? (
+        <IdleWarningDialog
+          onContinue={handleIdleContinue}
+          onClose={handleIdleClose}
+        />
+      ) : null}
     </section>
   );
 }
