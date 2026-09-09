@@ -235,6 +235,19 @@ function caretFromPoint(x, y) {
   return null;
 }
 
+function cursorPositionFromClick(view, event, blockFrom, blockTo) {
+  const caret = caretFromPoint(event.clientX, event.clientY);
+  if (!caret) return blockFrom;
+
+  try {
+    const position = view.posAtDOM(caret.node, caret.offset);
+    const line = view.state.doc.lineAt(position);
+    return Math.max(line.from, Math.min(position, line.to));
+  } catch {
+    return blockFrom;
+  }
+}
+
 function isActiveBlock(block, activeBlock) {
   return activeBlock && rangesIntersect(block.from, block.sourceTo, activeBlock.from, activeBlock.sourceTo ?? activeBlock.to);
 }
@@ -430,8 +443,9 @@ class RenderedMarkdownBlockWidget extends WidgetType {
     container.addEventListener('mousedown', (event) => {
       event.preventDefault();
       event.stopPropagation();
+      const position = cursorPositionFromClick(view, event, this.block.from, this.block.to);
       view.dispatch({
-        selection: { anchor: this.block.sourceTo ?? this.block.to },
+        selection: { anchor: position },
         effects: this.setActiveBlock.of(activeBlockRange(this.block)),
         scrollIntoView: true
       });
@@ -493,8 +507,9 @@ class RenderedMarkdownDocumentWidget extends WidgetType {
       if (!block) return;
       event.preventDefault();
       event.stopPropagation();
+      const position = cursorPositionFromClick(view, event, block.from, block.to);
       view.dispatch({
-        selection: { anchor: block.sourceTo ?? block.to },
+        selection: { anchor: position },
         effects: this.setActiveBlock.of(activeBlockRange(block)),
         scrollIntoView: true
       });

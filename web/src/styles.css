@@ -1236,9 +1236,9 @@ legend {
   border-radius: 0;
   background: color-mix(in srgb, var(--surface-2) 82%, transparent);
   box-shadow: inset 1px 0 0 var(--border), inset -1px 0 0 var(--border);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  font-size: var(--markdown-code-font-size, 14px);
-  line-height: 1.6;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: var(--markdown-font-size, 16px);
+  line-height: 1.62;
 }
 
 .cm-live-preview .cm-line.cm-live-active-source-line-first {
@@ -1352,6 +1352,8 @@ legend {
   background: var(--surface-2);
   color: var(--text-soft);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: var(--markdown-code-font-size, 14px);
+  line-height: 1.55;
 }
 
 .cm-live-code-fence-line {
@@ -1365,7 +1367,7 @@ legend {
   margin: 0;
   padding: 0;
   cursor: text;
-  line-height: 24px;
+  line-height: 1.62;
 }
 
 .cm-live-rendered-block .markdown-preview {
@@ -1378,6 +1380,8 @@ legend {
   border-radius: 0;
   background: transparent;
   white-space: normal;
+  font-size: var(--markdown-font-size, 16px);
+  line-height: 1.62;
 }
 
 .cm-live-rendered-block .markdown-preview > :first-child {
@@ -1416,7 +1420,8 @@ legend {
   background: color-mix(in srgb, var(--surface-2) 72%, transparent);
   color: var(--text-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
+  font-size: var(--markdown-code-font-size, 14px);
+  line-height: 1.55;
 }
 
 .cm-live-frontmatter-line + .cm-live-frontmatter-line {
@@ -1440,7 +1445,8 @@ legend {
   border-right: 1px solid var(--border);
   background: var(--bg-subtle);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  font-size: 13px;
+  font-size: var(--markdown-code-font-size, 14px);
+  line-height: 1.55;
 }
 
 .cm-live-table-line:first-child {
