@@ -16,7 +16,8 @@ export function createFileEditorSession({
   owner = createEditorOwnerToken(),
   timers = defaultTimers(),
   onHeartbeatError = () => {},
-  onConflict = () => {}
+  onConflict = () => {},
+  onLockLost = () => {}
 }) {
   let heartbeatID = null;
   let opened = false;
@@ -99,6 +100,10 @@ export function createFileEditorSession({
         if (status === 409 || status === 423) {
           stopHeartbeat();
           opened = false;
+          // Notify about lock loss (e.g., file opened in another tab)
+          if (status === 423) {
+            onLockLost({ reason: 'locked_elsewhere', message: 'Файл открыт в другой вкладке или сессии' });
+          }
         }
       })
       .finally(() => {

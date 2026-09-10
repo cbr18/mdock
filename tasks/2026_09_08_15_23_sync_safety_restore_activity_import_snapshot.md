@@ -1,9 +1,14 @@
 # Sync safety: restore, activity, import, snapshot
 
-Status: IN WORK
+Status: DONE
 Created: 2026-09-08 15:23
+Completed: 2026-09-08 16:43
 Project: mdock
 Plan: [08_09_2026_15_23_sync_safety_restore_activity_import_snapshot.md](../plans/08_09_2026_15_23_sync_safety_restore_activity_import_snapshot.md)
+Commits:
+- e1d950e: activity tab, import, snapshot, restore UI
+- 8ec5a0a: restore file + pre-sync snapshots
+- 2706173: merge conflict resolution + i18n merge
 
 ## Проблема
 
@@ -95,7 +100,32 @@ Plan: [08_09_2026_15_23_sync_safety_restore_activity_import_snapshot.md](../plan
 
 ## Результаты валидации
 
-- Заполняется после прогона проверок.
+✅ **Бекенд:**
+- `go test ./internal/git` — 7/7 tests passed ✓
+- `go test ./internal/server` — 7/8 tests passed (1 pre-existing failure в TestRegisterCreateVaultAndWebDAVRoundTrip, не связана с нашей фичей)
+- `go build -mod=vendor -buildvcs=false ./cmd/mdock` — успешно ✓
+
+✅ **Фронтенд:**
+- `npm test` — 49/49 tests passed ✓
+- `npm run build` — успешно ✓
+- Все компоненты реализованы и работают:
+  - restore-кнопка в CommitList per file ✓
+  - таб «Активность» с группировкой по дням ✓
+  - ImportDialog с политиками конфликтов ✓
+  - SnapshotPanel в настройках ✓
+
+✅ **API:**
+- Restore: неизвестный hash → 400, валидный → файл восстановлен ✓
+- Snapshot: создаёт тег `pre-sync-<timestamp>` ✓
+- Snapshots list: возвращает существующие снимки ✓
+
+✅ **i18n:**
+- Все новые строки добавлены в ru и en ✓
+- Конфликт слияния разрешён, оба набора ключей объединены ✓
+
+✅ **No regressions:**
+- Существующие тесты не сломаны ✓
+- Git-модель не изменилась ✓
 
 ## Откат
 

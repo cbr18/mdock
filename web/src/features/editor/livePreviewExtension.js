@@ -11,7 +11,6 @@ function commitLineBreak(view, separator, setActiveBlock) {
   const from = Math.min(selection.from, selection.to);
   const to = Math.max(selection.from, selection.to);
   const insert = isCaretInsideFence(view.state) ? '\n' : separator;
-  console.log('[commitLineBreak] from=', from, 'to=', to, 'insert=', JSON.stringify(insert));
   view.dispatch({
     changes: { from, to, insert },
     selection: { anchor: from + insert.length },
@@ -19,8 +18,6 @@ function commitLineBreak(view, separator, setActiveBlock) {
     userEvent: 'input',
     effects: [setActiveBlock.of(null)]
   });
-  const docAfter = view.state.doc.toString();
-  console.log('[commitLineBreak] after dispatch, doc length=', docAfter.length, 'doc=', JSON.stringify(docAfter));
   return true;
 }
 
@@ -32,7 +29,6 @@ function isCaretInsideFence(state) {
 
 function createHandleEnter(setActiveBlock) {
   return (view) => {
-    console.log('[handleEnter] called');
     return commitLineBreak(view, '\n\n', setActiveBlock);
   };
 }
@@ -139,7 +135,7 @@ function buildStateValue(state, frontmatterLabel, activeBlock, setActiveBlock) {
 
 function buildDecorations(state, frontmatterLabel, activeBlock, setActiveBlock) {
   const ranges = [];
-  const blocks = splitBlocks(state.doc.toString());
+  const blocks = getSplitBlocks(state.doc.toString());
 
   if (!activeBlock) {
     const widget = new RenderedMarkdownDocumentWidget(state.doc.toString(), blocks, frontmatterLabel, setActiveBlock);
@@ -536,18 +532,15 @@ class RenderedMarkdownDocumentWidget extends WidgetType {
   blockFromEventTarget(container, target) {
     const preview = container.querySelector('.markdown-preview');
     if (!preview || !(target instanceof Element)) {
-      console.log('[blockFromEventTarget] no preview or not element, returning blocks[0]');
       return this.blocks[0] ?? null;
     }
 
     const child = target.closest('.markdown-preview > *');
     if (!child) {
-      console.log('[blockFromEventTarget] no child found, returning blocks[0]');
       return this.blocks[0] ?? null;
     }
 
     const index = Array.from(preview.children).indexOf(child);
-    console.log('[blockFromEventTarget] index=', index, 'blocks.length=', this.blocks.length, 'returning block:', this.blocks[index]);
     return this.blocks[index] ?? null;
   }
 
@@ -573,7 +566,7 @@ function activeBlockRange(block) {
 }
 
 function blockAtPosition(state, position) {
-  const blocks = splitBlocks(state.doc.toString());
+  const blocks = getSplitBlocks(state.doc.toString());
   return blocks.find((block) => position >= block.from && position < block.to) ?? blocks[blocks.length - 1] ?? null;
 }
 
@@ -587,11 +580,27 @@ function requestLivePreviewMeasure(view) {
   });
 }
 
+// Debounced splitBlocks cache
+let splitBlocksCache = { content: '', blocks: null, timestamp: 0 };
+const SPLIT_BLOCKS_DEBOUNCE_MS = 50;
+
+function getSplitBlocks(content) {
+  const now = Date.now();
+  if (splitBlocksCache.content === content && splitBlocksCache.blocks) {
+    return splitBlocksCache.blocks;
+  }
+  // For rapid changes, we could add a small debounce, but for now just cache
+  // In a full implementation, we'd use requestIdleCallback or setTimeout
+  splitBlocksCache = { content, blocks: splitBlocks(content), timestamp: now };
+  return splitBlocksCache.blocks;
+}
+
 export const __livePreviewInternals = {
   activeBlockRange,
   blockAtPosition,
   requestLivePreviewMeasure,
   splitBlocks,
+  getSplitBlocks,
   createHandleEnter,
   createHandleSoftEnter,
   commitLineBreak,

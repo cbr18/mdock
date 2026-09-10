@@ -273,7 +273,10 @@ test('renders vault file list and markdown preview', async () => {
       return response({ content: '# Child' });
     }
     if (url === '/api/vaults/work-notes/locks') {
-      return response({ lock: { path: 'note.md', source: 'web' } });
+      return response({ vault: { id: 1, slug: 'work-notes', name: 'Work Notes', path: 'vault-1', kind: 'shared', role: 'owner', archived: false }, lock: { path: 'note.md', source: 'web' } });
+    }
+    if (url === '/api/vaults/work-notes/locks/heartbeat') {
+      return response({ vault: { id: 1, slug: 'work-notes', name: 'Work Notes', path: 'vault-1', kind: 'shared', role: 'owner', archived: false } });
     }
     return response({}, 404);
   });
@@ -540,6 +543,12 @@ test('opens vault file from deep link', async () => {
     if (url === '/api/vaults/work-notes/webdav') {
       return response({ webdav: { url: 'http://localhost:3000/webdav/work-notes/', default_file_root: '.' } });
     }
+    if (url === '/api/vaults/work-notes/locks') {
+      return response({ vault: { id: 1, slug: 'work-notes', name: 'Work Notes', path: 'vault-1', kind: 'shared', role: 'owner', archived: false }, lock: { owner: 'test-owner' } });
+    }
+    if (url === '/api/vaults/work-notes/locks/heartbeat') {
+      return response({ vault: { id: 1, slug: 'work-notes', name: 'Work Notes', path: 'vault-1', kind: 'shared', role: 'owner', archived: false } });
+    }
     if (url === '/api/vaults/work-notes/files?path=.') {
       return response({
         entries: [
@@ -662,6 +671,12 @@ test('restores file from commit, lists snapshots and shows activity tab', async 
     if (url === '/api/vaults/work-notes/webdav') {
       return response({ webdav: { url: 'http://localhost:3000/webdav/work-notes/', default_file_root: '.' } });
     }
+    if (url === '/api/vaults/work-notes/locks') {
+      return response({ vault: { id: 1, slug: 'work-notes', name: 'Work Notes', path: 'vault-1', kind: 'shared', role: 'owner', archived: false }, lock: { owner: 'test-owner' } });
+    }
+    if (url === '/api/vaults/work-notes/locks/heartbeat') {
+      return response({ vault: { id: 1, slug: 'work-notes', name: 'Work Notes', path: 'vault-1', kind: 'shared', role: 'owner', archived: false } });
+    }
     if (url === '/api/vaults/work-notes/files?path=.') {
       return response({ entries: [] });
     }
@@ -676,6 +691,7 @@ test('restores file from commit, lists snapshots and shows activity tab', async 
   fireEvent.click(screen.getByRole('button', { name: /Work Notes/ }));
 
   fireEvent.click(await screen.findByRole('tab', { name: 'Настройки хранилища' }));
+  fireEvent.click(await screen.findByRole('tab', { name: 'Снимки' }));
   const commitButton = await screen.findByRole('button', { name: /sync\(web\): update 1 file/ });
   fireEvent.click(commitButton);
   expect(await screen.findByLabelText('Изменённые файлы')).toBeInTheDocument();
@@ -684,7 +700,7 @@ test('restores file from commit, lists snapshots and shows activity tab', async 
   await waitFor(() => expect(restoreCalled).toEqual({ hash: 'abcdef1234567890', path: 'note.md' }));
   expect(await screen.findByText('Файл восстановлен')).toBeInTheDocument();
 
-  expect(screen.getByRole('heading', { name: 'Снимки' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Снимки' })).toBeInTheDocument();
   expect(snapshotsCalled).toBeGreaterThanOrEqual(1);
   expect(screen.getByText('pre-sync-1000000000')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Создать снимок' }));

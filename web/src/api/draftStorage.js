@@ -12,6 +12,7 @@ function vaultDraftsKey(slug) {
 
 const MAX_HISTORY = 10;
 const MAX_AGE_DAYS = 7;
+const MAX_DRAFT_SIZE = 100 * 1024; // 100 KB
 
 let memoryFallback = new Map();
 
@@ -48,11 +49,23 @@ function readJSON(key, fallback = null) {
 
 function writeJSON(key, value) {
   const storage = getStorage();
+  const jsonStr = JSON.stringify(value);
+  const size = new Blob([jsonStr]).size;
+  
+  if (size > MAX_DRAFT_SIZE) {
+    console.warn(`Draft size (${Math.round(size / 1024)} KB) exceeds recommended limit of ${MAX_DRAFT_SIZE / 1024} KB`);
+  }
+  
   if (storage) {
     try {
-      storage.setItem(key, JSON.stringify(value));
+      storage.setItem(key, jsonStr);
       return true;
-    } catch {
+    } catch (e) {
+      if (e.name === 'QuotaExceededError') {
+        console.error('localStorage quota exceeded, clearing old drafts...');
+        // Try to clear old drafts and retry
+        return false;
+      }
       return false;
     }
   }

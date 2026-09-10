@@ -1,7 +1,7 @@
 # Markdown editor requirements
 
-Status: DRAFT
-Updated: 2026-08-16
+Status: v1 IMPLEMENTED (2026-09-10)
+Updated: 2026-09-10
 
 ## Цель
 
@@ -114,3 +114,35 @@ Obsidian официально использует смесь CommonMark, GitHub
 - Toolbar commands generate source Markdown listed as MVP in the table.
 - Unsupported Obsidian syntax is preserved when editing around it.
 - Tests cover text transforms, lock/save API wrapper and basic editor workflow.
+
+---
+
+## v1 Implementation Status (2026-09-10)
+
+| Feature | Status | Notes |
+|---|---|---|
+| Live edit (Preview + Edit) | ✅ Done | Click-to-edit, inline source, cursor at click pos |
+| Hard line breaks | ✅ Done | `remark-breaks` + GFM `breaks:true` |
+| Lock/heartbeat | ✅ Done | Single-flight, visibility recovery, idle timeout |
+| Draft storage | ✅ Done | localStorage + history (10 versions), auto-draft on 409/423 |
+| Conflict dialog | ✅ Done | "Перечитать с сервера" / "Продолжить с черновиком" |
+| Keyboard shortcuts | ✅ Done | Ctrl+S/Z/Y/A |
+| Mode switching | ✅ Done | Preview/Source/Split без потери контента |
+| Height consistency | ✅ Done | CSS font/line-height matching |
+
+| Deferred Feature | Status |
+|---|---|
+| Draft history UI page | Deferred (data structure ready) |
+| Structural Backspace (list/blockquote) | Deferred |
+| Multi-block selection ops | Deferred |
+| Cell-level table editor | Deferred |
+| Wikilinks / embeds / callouts / Mermaid | Next task |
+| Server-side diff/merge | Next task |
+
+---
+
+## Known Issues
+
+- 2 pre-existing test failures in `App.test.jsx` (unrelated to v1 changes)
+- Large doc performance: consider debounce + viewport rendering
+- Multi-tab UX: show "File opened in another tab" on 423

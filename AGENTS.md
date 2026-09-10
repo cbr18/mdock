@@ -43,8 +43,8 @@ The project is new. Do not assume any previous architecture, service names, depl
 - Когда большая правка требует ревью пользователя перед реализацией, сначала создай задачу и план, затем покажи план реализации до редактирования кода.
 - Держи task- и plan-файлы в рамках этого репозитория.
 - Если в этом репозитории есть шаблон задачи или плана, используй его вместо нового формата.
-- Имена task-файлов: `DD_MM_YYYY_HH_MM_description.md`.
-- Имена plan-файлов: `DD_MM_YYYY_HH_MM_description.md`.
+- Имена task-файлов: `YYYY_MM_DD_HH_MM_description.md`.
+- Имена plan-файлов: `YYYY_MM_DD_HH_MM_description.md`.
 - Каждый task-файл должен содержать верхнеуровневую строку статуса: `Status: CREATED`, `Status: IN WORK`, `Status: DONE` или `Status: REJECTED`.
 - Каждый task-файл должен содержать ссылку `Plan: [plan-file.md](../plans/plan-file.md)`.
 - Каждый plan-файл должен содержать обратную ссылку `Task: [task-file.md](../tasks/task-file.md)`.
