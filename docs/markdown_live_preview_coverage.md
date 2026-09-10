@@ -1,6 +1,7 @@
 # Markdown Live Preview Coverage
 
 Status: MVP coverage after rendered block live preview.
+Completed: 2026-09-10
 
 ## Источники
 
@@ -8,16 +9,35 @@ Status: MVP coverage after rendered block live preview.
 - GitHub Flavored Markdown Spec 0.29-gfm: https://github.github.com/gfm/
 - GitHub tables guide: https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/organizing-information-with-tables
 
-## Решение
+## Реализованные фичи (v1)
 
-Live editor во вкладке `Просмотр + Редактирование` использует тот же renderer, что обычный preview:
+### Режимы
+- **Вкладка "Просмотр" + галочка "Редактирование"** — live edit: rendered блоки, клик → inline source editing
+- **Вкладка "Источник"** — чистый CodeMirror редактор исходного Markdown
+- **Вкладка "Разделено"** — source слева, preview справа (live edit не применяется)
 
-- `react-markdown`
-- `remark-gfm`
-- `remark-frontmatter`
-- `rehype-highlight`
+### Pipeline
+- `react-markdown` + `remark-gfm` + `remark-frontmatter` + `rehype-highlight` + `remark-breaks`
+- `remark-gfm` с `breaks: true` + `remark-breaks` → hard line breaks (одиночные `\n` → `<br>`)
 
-Неактивные Markdown-блоки заменяются rendered widgets. При клике по rendered block редактор ставит курсор в исходный Markdown, и блок раскрывается как source.
+### Lock & Concurrency
+- File lock при открытии для редактирования (acquire/heartbeat/release)
+- Single-flight heartbeat (предотвращает наложение запросов)
+- Visibility/focus recovery (проверка lock при возврате вкладки)
+- Idle timeout: 30 мин неактивности → warning → 2 мин → автозакрытие
+
+### Draft & Conflict
+- localStorage draft storage: `mdock.draft.{vaultSlug}.{filePath}`
+- History: 10 последних версий на документ
+- Auto-draft при 409/423 Conflict
+- Conflict dialog: "Перечитать с сервера" / "Продолжить с черновиком"
+- Draft recovery при повторном открытии (< 24h)
+
+### Keyboard
+- Ctrl/Cmd+S — save
+- Ctrl/Cmd+Z — undo (word-level)
+- Ctrl/Cmd+Y / Shift+Ctrl/Cmd+Z — redo
+- Ctrl/Cmd+A — select all
 
 ## CommonMark
 
@@ -41,7 +61,7 @@ Live editor во вкладке `Просмотр + Редактирование
 | Images | 6.4 CommonMark / 6.7 GFM | Renderer создаёт `img`, но локальные vault attachment URLs требуют отдельного API |
 | Autolinks | 6.5 CommonMark / 6.8 GFM | Rendered renderer-ом |
 | Raw HTML | 6.6 CommonMark / 6.10 GFM | Передаётся renderer policy текущего preview |
-| Hard / soft line breaks | 6.7 / 6.8 CommonMark | Rendered renderer-ом |
+| Hard / soft line breaks | 6.7 / 6.8 CommonMark | **Hard breaks: одиночные `\n` → `<br>` (remark-breaks + GFM breaks:true)** |
 
 ## GFM Extensions
 
@@ -53,14 +73,14 @@ Live editor во вкладке `Просмотр + Редактирование
 | Autolinks extension | 6.9 | Rendered через `remark-gfm` |
 | Disallowed raw HTML | 6.11 | Не расширялось; соответствует текущему preview pipeline |
 
-## Obsidian Extensions
+## Obsidian Extensions (Deferred)
 
-Эти элементы не входят в CommonMark/GFM и не закрываются текущей задачей полностью:
+Эти элементы не входят в CommonMark/GFM и не закрываются текущей задачей:
 
 | Элемент | Live preview сейчас | Что нужно отдельно |
 | --- | --- | --- |
-| `==highlight==` | Остаётся текстом, потому что текущий preview renderer это не парсит | Remark plugin/preprocessor для Obsidian highlight |
-| `[[wikilink]]` / `[[page\|alias]]` | Остаётся текстом, потому что текущий preview renderer это не парсит | Parser + link resolver по vault tree |
+| `==highlight==` | Остаётся текстом | Remark plugin/preprocessor для Obsidian highlight |
+| `[[wikilink]]` / `[[page\|alias]]` | Остаётся текстом | Parser + link resolver по vault tree |
 | `![[embed]]` | Остаётся текстом/обычным markdown content | Attachment API + embed renderer |
 | Callouts `> [!note]` | Сейчас рендерятся как обычный blockquote | Obsidian callout transform |
 | Mermaid | Не рендерится | Mermaid dependency/sandbox/render policy |
@@ -72,3 +92,6 @@ Live editor во вкладке `Просмотр + Редактирование
 - Сложные nested container edge cases отдаём renderer-у внутри выбранного блока, но границы блоков могут отличаться от полного CommonMark AST на экзотических документах.
 - Таблицы рендерятся как preview, но cell-level редактирования пока нет: клик раскрывает Markdown source всей таблицы.
 - Task checkbox пока rendered-only: клик раскрывает source, прямой toggle checkbox не меняет Markdown.
+- **Structural Backspace** (выход из вложенности списка/blockquote при пустом selection) — не реализован.
+- **Multi-block selection операции** (cut/copy/paste по нескольким блокам) — базовый CM6 работает, специальная обработка не добавлена.
+- **Draft history UI page** — структура данных есть (`loadDraftHistory`, `listDrafts`), UI страница не реализована.
