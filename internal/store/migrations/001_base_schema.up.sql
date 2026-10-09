@@ -1,0 +1,50 @@
+PRAGMA journal_mode=WAL;
+PRAGMA foreign_keys=ON;
+PRAGMA busy_timeout=5000;
+
+CREATE TABLE IF NOT EXISTS users (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	login TEXT NOT NULL UNIQUE,
+	password_hash TEXT NOT NULL,
+	is_admin INTEGER NOT NULL DEFAULT 0,
+	disabled INTEGER NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS vaults (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	name TEXT NOT NULL DEFAULT '',
+	slug TEXT NOT NULL UNIQUE,
+	kind TEXT NOT NULL,
+	path TEXT NOT NULL UNIQUE,
+	archived INTEGER NOT NULL DEFAULT 0,
+	remote_url TEXT NOT NULL DEFAULT '',
+	last_push_at TEXT NOT NULL DEFAULT '',
+	last_push_error TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS vault_members (
+	vault_id INTEGER NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	role TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	PRIMARY KEY (vault_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+	id TEXT PRIMARY KEY,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	expires_at TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS file_locks (
+	vault_id INTEGER NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
+	path TEXT NOT NULL,
+	owner TEXT NOT NULL,
+	source TEXT NOT NULL,
+	expires_at TEXT NOT NULL,
+	heartbeat_at TEXT NOT NULL,
+	PRIMARY KEY (vault_id, path)
+);

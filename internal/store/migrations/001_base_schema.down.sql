@@ -1,0 +1,7 @@
+-- Additive-only migration, no down
+-- To rollback, drop tables in reverse order:
+-- DROP TABLE IF EXISTS file_locks;
+-- DROP TABLE IF EXISTS sessions;
+-- DROP TABLE IF EXISTS vault_members;
+-- DROP TABLE IF EXISTS vaults;
+-- DROP TABLE IF EXISTS users;

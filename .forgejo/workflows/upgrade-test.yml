@@ -1,0 +1,189 @@
+# Upgrade Test Workflow
+# Deploys previous released version, seeds data, updates to current, verifies integrity
+name: Upgrade Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  upgrade-test:
+    name: Verified Upgrade Path
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout current code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get previous release tag
+        id: prev_tag
+        run: |
+          PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | head -2 | tail -1)
+          if [[ -z "$PREV_TAG" ]]; then
+            echo "No previous tag found, skipping upgrade test"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "Previous tag: $PREV_TAG"
+            echo "prev_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Docker
+        if: steps.prev_tag.outputs.skip != 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Deploy previous version
+        if: steps.prev_tag.outputs.skip != 'true'
+        run: |
+          git checkout ${{ steps.prev_tag.outputs.prev_tag }}
+          # Build and start previous version
+          docker compose -f docker-compose.yml up -d --build
+          # Wait for health
+          for i in {1..30}; do
+            if curl -sf http://localhost:8080/healthz >/dev/null; then
+              echo "Previous version healthy"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Seed test data
+        if: steps.prev_tag.outputs.skip != 'true'
+        run: |
+          # Create test user and vault via API
+          curl -sf -X POST http://localhost:8080/api/auth/register \
+            -H "Content-Type: application/json" \
+            -d '{"username":"testuser","password":"testpass123"}'
+          
+          # Login
+          COOKIES=$(mktemp)
+          curl -sf -c "$COOKIES" -X POST http://localhost:8080/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"username":"testuser","password":"testpass123"}'
+          
+          CSRF=$(grep mdock_csrf "$COOKIES" | awk '{print $7}')
+          
+          # Create vault
+          VAULT_RESP=$(curl -sf -b "$COOKIES" -H "X-CSRF-Token: $CSRF" -X POST http://localhost:8080/api/vaults \
+            -H "Content-Type: application/json" \
+            -d '{"name":"Test Vault"}')
+          
+          SLUG=$(echo "$VAULT_RESP" | jq -r '.vault.slug')
+          echo "Created vault: $SLUG"
+          
+          # Add test files
+          for i in {1..5}; do
+            curl -sf -b "$COOKIES" -H "X-CSRF-Token: $CSRF" -X POST "http://localhost:8080/api/vaults/$SLUG/files" \
+              -H "Content-Type: application/json" \
+              -d "{\"path\":\"note$i.md\",\"content\":\"# Test Note $i\n\nContent for note $i\"}"
+          done
+          
+          # Create directory and nested file
+          curl -sf -b "$COOKIES" -H "X-CSRF-Token: $CSRF" -X POST "http://localhost:8080/api/vaults/$SLUG/dirs" \
+            -H "Content-Type: application/json" \
+            -d '{"path":"folder"}'
+          
+          curl -sf -b "$COOKIES" -H "X-CSRF-Token: $CSRF" -X POST "http://localhost:8080/api/vaults/$SLUG/files" \
+            -H "Content-Type: application/json" \
+            -d '{"path":"folder/nested.md","content":"# Nested\n\nIn a folder"}'
+          
+          # Wait for git commits
+          sleep 3
+          
+          # Verify data via API
+          FILES=$(curl -sf -b "$COOKIES" "http://localhost:8080/api/vaults/$SLUG/files?path=")
+          COUNT=$(echo "$FILES" | jq '.entries | length')
+          echo "Seeded $COUNT files"
+          
+          # Verify git history
+          GIT_STATUS=$(curl -sf -b "$COOKIES" "http://localhost:8080/api/vaults/$SLUG/git/status")
+          echo "Git status: $GIT_STATUS"
+          
+          COMMITS=$(curl -sf -b "$COOKIES" "http://localhost:8080/api/vaults/$SLUG/git/commits?limit=5")
+          echo "Commits: $COMMITS"
+          
+          # Test WebDAV access
+          curl -sf -u "testuser:testpass123" -X PROPFIND "http://localhost:8080/webdav/$SLUG/" \
+            -H "Depth: 1" | grep -q "multistatus" && echo "WebDAV OK"
+          
+          # Save vault slug for verification
+          echo "$SLUG" > /tmp/test_vault_slug
+
+      - name: Update to current version
+        if: steps.prev_tag.outputs.skip != 'true'
+        run: |
+          # Return to main branch
+          git checkout main
+          
+          # Run update script (non-interactive)
+          ASSUME_YES=true ./scripts/update.sh --apply --branch main
+          
+          # Wait for health
+          for i in {1..30}; do
+            if curl -sf http://localhost:8080/healthz >/dev/null; then
+              echo "Updated version healthy"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Verify data integrity after upgrade
+        if: steps.prev_tag.outputs.skip != 'true'
+        run: |
+          SLUG=$(cat /tmp/test_vault_slug)
+          
+          # Re-login
+          COOKIES=$(mktemp)
+          curl -sf -c "$COOKIES" -X POST http://localhost:8080/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"username":"testuser","password":"testpass123"}'
+          
+          CSRF=$(grep mdock_csrf "$COOKIES" | awk '{print $7}')
+          
+          # Verify all files still accessible
+          FILES=$(curl -sf -b "$COOKIES" "http://localhost:8080/api/vaults/$SLUG/files?path=")
+          COUNT=$(echo "$FILES" | jq '.entries | length')
+          echo "Files after upgrade: $COUNT"
+          [[ "$COUNT" -ge 6 ]] || { echo "ERROR: Missing files after upgrade"; exit 1; }
+          
+          # Verify content integrity
+          for i in {1..5}; do
+            CONTENT=$(curl -sf -b "$COOKIES" "http://localhost:8080/api/vaults/$SLUG/files/content?path=note$i.md")
+            echo "$CONTENT" | grep -q "Test Note $i" || { echo "ERROR: note$i.md content mismatch"; exit 1; }
+          done
+          
+          NESTED=$(curl -sf -b "$COOKIES" "http://localhost:8080/api/vaults/$SLUG/files/content?path=folder/nested.md")
+          echo "$NESTED" | grep -q "Nested" || { echo "ERROR: nested.md content mismatch"; exit 1; }
+          
+          # Verify git history preserved
+          GIT_STATUS=$(curl -sf -b "$COOKIES" "http://localhost:8080/api/vaults/$SLUG/git/status")
+          echo "Git status after upgrade: $GIT_STATUS"
+          
+          COMMITS=$(curl -sf -b "$COOKIES" "http://localhost:8080/api/vaults/$SLUG/git/commits?limit=10")
+          COMMIT_COUNT=$(echo "$COMMITS" | jq '.commits | length')
+          echo "Total commits: $COMMIT_COUNT"
+          [[ "$COMMIT_COUNT" -ge 2 ]] || { echo "ERROR: Git history lost"; exit 1; }
+          
+          # Verify WebDAV still works
+          curl -sf -u "testuser:testpass123" -X PROPFIND "http://localhost:8080/webdav/$SLUG/" \
+            -H "Depth: 1" | grep -q "multistatus" && echo "WebDAV after upgrade OK"
+          
+          # Verify version
+          VERSION=$(curl -sf http://localhost:8080/api/version)
+          echo "Version after upgrade: $VERSION"
+          
+          echo "=== ALL VERIFICATIONS PASSED ==="
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker compose down -v || true
+
+      - name: Report result
+        if: steps.prev_tag.outputs.skip == 'true'
+        run: echo "No previous tag found, skipping upgrade test"
