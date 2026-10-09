@@ -52,6 +52,7 @@ export function MarkdownEditor({
   toolbarConfig,
   minHeight = '520px',
   className = '',
+  ariaLabel,
 }: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<EditorInstance | null>(null);
@@ -102,7 +103,7 @@ export function MarkdownEditor({
     return (
       <div className={`split-document-view ${className}`} style={{ minHeight }}>
         <div className="document-pane" aria-label="Source">
-          <div ref={containerRef} className="markdown-editor-shell" style={{ height: '100%', minHeight: 0 }} />
+          <div ref={containerRef} className="markdown-editor-shell" style={{ height: '100%', minHeight: 0 }} aria-label={ariaLabel} />
         </div>
         <div className="document-pane" aria-label="Rendered">
           <div className="rendered-preview-view" style={{ minHeight: 0 }}>
@@ -116,14 +117,14 @@ export function MarkdownEditor({
   if (variant === 'live') {
     return (
       <div className={`live-document-view ${className}`} style={{ minHeight }}>
-        <div ref={containerRef} className="markdown-editor-shell" style={{ height: '100%', minHeight: 0 }} />
+        <div ref={containerRef} className="markdown-editor-shell" style={{ height: '100%', minHeight: 0 }} aria-label={ariaLabel} />
       </div>
     );
   }
 
   // Source mode
   return (
-    <div ref={containerRef} className={`markdown-editor-shell ${className}`} style={{ minHeight }} />
+    <div ref={containerRef} className={`markdown-editor-shell ${className}`} style={{ minHeight }} aria-label={ariaLabel} />
   );
 }
 

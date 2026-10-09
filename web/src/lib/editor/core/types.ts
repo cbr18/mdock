@@ -173,6 +173,8 @@ export interface MarkdownEditorProps {
   minHeight?: string;
   /** Additional CSS classes */
   className?: string;
+  /** Accessibility label for the editor */
+  ariaLabel?: string;
 }
 
 /**

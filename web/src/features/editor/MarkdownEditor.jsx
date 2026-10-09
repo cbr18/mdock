@@ -190,6 +190,7 @@ export function MarkdownEditor({
         variant={variant}
         livePreviewConfig={livePreviewConfig}
         minHeight="520px"
+        ariaLabel={t('markdownEditor')}
       />
     </section>
   );
