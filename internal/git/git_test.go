@@ -207,7 +207,7 @@ func TestQueueFlushCommitsPendingFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "note.md"), []byte("hello"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	queue := NewQueue(client, repo, time.Hour)
+	queue := NewQueue(client, repo, time.Hour, nil, 0)
 	if err := queue.Enqueue(ctx, Task{Source: "test", Message: "changed", Paths: []string{"note.md"}}); err != nil {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
@@ -256,7 +256,7 @@ func TestQueueFlushCommitsFinalStateWhenPendingPathsWereRemoved(t *testing.T) {
 		t.Fatalf("WriteFile(keep) error = %v", err)
 	}
 
-	queue := NewQueue(client, repo, time.Hour)
+	queue := NewQueue(client, repo, time.Hour, nil, 0)
 	if err := queue.Enqueue(ctx, Task{Source: "test", Message: "changed", Paths: []string{"notes/today.md", "notes/tomorrow.md", "notes/keep.md"}}); err != nil {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
@@ -290,7 +290,7 @@ func TestQueueRegistryCloseAllFlushesQueues(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	registry := NewQueueRegistry(client, time.Hour)
+	registry := NewQueueRegistry(client, time.Hour, nil)
 	queue := registry.For(1, repo)
 	if err := queue.Enqueue(ctx, Task{Source: "webdav", Message: "changed", Paths: []string{"note.md"}}); err != nil {
 		t.Fatalf("Enqueue() error = %v", err)

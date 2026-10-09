@@ -197,7 +197,7 @@ func (s *Service) WriteFile(vaultPath, relPath string, data []byte) error {
 	if err := os.WriteFile(full, data, 0o644); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
-	return nil
+	return s.syncPath(full)
 }
 
 func (s *Service) Mkdir(vaultPath, relPath string) error {
@@ -208,7 +208,7 @@ func (s *Service) Mkdir(vaultPath, relPath string) error {
 	if err := os.MkdirAll(full, 0o755); err != nil {
 		return fmt.Errorf("create directory: %w", err)
 	}
-	return nil
+	return s.syncPath(full)
 }
 
 func (s *Service) Rename(vaultPath, oldRelPath, newRelPath string) error {
@@ -226,7 +226,11 @@ func (s *Service) Rename(vaultPath, oldRelPath, newRelPath string) error {
 	if err := os.Rename(oldFull, newFull); err != nil {
 		return fmt.Errorf("rename path: %w", err)
 	}
-	return nil
+	// Sync both parent directories to persist the rename
+	if err := s.syncPath(filepath.Dir(newFull)); err != nil {
+		return err
+	}
+	return s.syncPath(filepath.Dir(oldFull))
 }
 
 func (s *Service) Delete(vaultPath, relPath string) error {
@@ -234,10 +238,23 @@ func (s *Service) Delete(vaultPath, relPath string) error {
 	if err != nil {
 		return err
 	}
+	parent := filepath.Dir(full)
 	if err := os.RemoveAll(full); err != nil {
 		return fmt.Errorf("delete path: %w", err)
 	}
-	return nil
+	return s.syncPath(parent)
+}
+
+func (s *Service) syncPath(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open for sync: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("sync: %w", err)
+	}
+	return f.Close()
 }
 
 func ensureInside(root, path string) error {

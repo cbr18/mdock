@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sync"
 	"time"
@@ -10,12 +11,13 @@ import (
 type QueueRegistry struct {
 	client   *Client
 	debounce time.Duration
+	db       *sql.DB
 	mu       sync.Mutex
 	queues   map[int64]*Queue
 }
 
-func NewQueueRegistry(client *Client, debounce time.Duration) *QueueRegistry {
-	return &QueueRegistry{client: client, debounce: debounce, queues: map[int64]*Queue{}}
+func NewQueueRegistry(client *Client, debounce time.Duration, db *sql.DB) *QueueRegistry {
+	return &QueueRegistry{client: client, debounce: debounce, db: db, queues: map[int64]*Queue{}}
 }
 
 func (r *QueueRegistry) For(vaultID int64, repoPath string) *Queue {
@@ -24,7 +26,7 @@ func (r *QueueRegistry) For(vaultID int64, repoPath string) *Queue {
 	if queue, ok := r.queues[vaultID]; ok {
 		return queue
 	}
-	queue := NewQueue(r.client, repoPath, r.debounce)
+	queue := NewQueue(r.client, repoPath, r.debounce, r.db, vaultID)
 	r.queues[vaultID] = queue
 	return queue
 }

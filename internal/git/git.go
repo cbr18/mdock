@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -17,6 +18,10 @@ var ErrInvalidHash = errors.New("invalid commit hash")
 
 type Client struct {
 	bin string
+}
+
+func (c *Client) Bin() string {
+	return c.bin
 }
 
 type CommitInfo struct {
@@ -358,6 +363,8 @@ type Queue struct {
 	client   *Client
 	repoPath string
 	debounce time.Duration
+	db       *sql.DB
+	vaultID  int64
 
 	runMu   sync.Mutex
 	mu      sync.Mutex
@@ -367,14 +374,14 @@ type Queue struct {
 	lastErr error
 }
 
-func NewQueue(client *Client, repoPath string, debounce time.Duration) *Queue {
+func NewQueue(client *Client, repoPath string, debounce time.Duration, db *sql.DB, vaultID int64) *Queue {
 	if debounce <= 0 {
 		debounce = time.Second
 	}
-	return &Queue{client: client, repoPath: repoPath, debounce: debounce, pending: map[string]string{}}
+	return &Queue{client: client, repoPath: repoPath, debounce: debounce, db: db, vaultID: vaultID, pending: map[string]string{}}
 }
 
-func (q *Queue) Enqueue(_ context.Context, task Task) error {
+func (q *Queue) Enqueue(ctx context.Context, task Task) error {
 	if task.Source == "" {
 		return fmt.Errorf("git task source is required")
 	}
@@ -392,6 +399,16 @@ func (q *Queue) Enqueue(_ context.Context, task Task) error {
 	if len(task.Paths) == 0 {
 		q.pending[""] = task.Source
 	}
+	// Persist to SQLite
+	if q.db != nil && q.vaultID != 0 {
+		for _, path := range task.Paths {
+			if path != "" {
+				if err := q.persistPending(ctx, path, task.Source); err != nil {
+					return fmt.Errorf("persist pending: %w", err)
+				}
+			}
+		}
+	}
 	if q.timer != nil {
 		q.timer.Stop()
 	}
@@ -399,6 +416,21 @@ func (q *Queue) Enqueue(_ context.Context, task Task) error {
 		q.flush(context.Background())
 	})
 	return nil
+}
+
+func (q *Queue) persistPending(ctx context.Context, path, source string) error {
+	if q.db == nil || q.vaultID == 0 {
+		return nil
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := q.db.ExecContext(ctx, `
+		INSERT INTO git_queue_pending (vault_id, path, source, created_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(vault_id, path) DO UPDATE SET
+			source = excluded.source,
+			created_at = excluded.created_at
+	`, q.vaultID, path, source, now)
+	return err
 }
 
 func (q *Queue) Flush(ctx context.Context) error {
@@ -463,8 +495,23 @@ func (q *Queue) flush(ctx context.Context) error {
 		q.setLastErr(err)
 		return err
 	}
+	// Successfully committed - clear persisted pending
+	if q.db != nil && q.vaultID != 0 {
+		if err := q.clearPending(ctx); err != nil {
+			q.setLastErr(err)
+			return err
+		}
+	}
 	q.setLastErr(nil)
 	return nil
+}
+
+func (q *Queue) clearPending(ctx context.Context) error {
+	if q.db == nil || q.vaultID == 0 {
+		return nil
+	}
+	_, err := q.db.ExecContext(ctx, `DELETE FROM git_queue_pending WHERE vault_id = ?`, q.vaultID)
+	return err
 }
 
 func syncCommitMessage(sources map[string]struct{}, files int) string {
@@ -488,4 +535,43 @@ func (q *Queue) setLastErr(err error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.lastErr = err
+}
+
+func (q *Queue) ReplayPending(ctx context.Context) error {
+	if q.db == nil || q.vaultID == 0 {
+		return nil
+	}
+	rows, err := q.db.QueryContext(ctx, `SELECT path, source FROM git_queue_pending WHERE vault_id = ? ORDER BY created_at`, q.vaultID)
+	if err != nil {
+		return fmt.Errorf("replay pending query: %w", err)
+	}
+	defer rows.Close()
+	type pendingItem struct {
+		path   string
+		source string
+	}
+	var items []pendingItem
+	for rows.Next() {
+		var item pendingItem
+		if err := rows.Scan(&item.path, &item.source); err != nil {
+			return fmt.Errorf("scan pending: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate pending: %w", err)
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	// Enqueue all pending items in-memory
+	q.mu.Lock()
+	for _, item := range items {
+		if item.path != "" {
+			q.pending[item.path] = item.source
+		}
+	}
+	q.mu.Unlock()
+	// Flush them (will commit and clear persisted)
+	return q.flush(ctx)
 }

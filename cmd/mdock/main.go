@@ -144,6 +144,8 @@ func initializeVaults(ctx context.Context, st *store.Store, vaultService *vault.
 	if err != nil {
 		return err
 	}
+	// Create temporary queue registry for replaying pending git operations
+	queueRegistry := appgit.NewQueueRegistry(gitClient, 5*time.Second, st.DB())
 	for _, item := range vaults {
 		root, err := vaultService.EnsureVault(item.Path)
 		if err != nil {
@@ -153,6 +155,11 @@ func initializeVaults(ctx context.Context, st *store.Store, vaultService *vault.
 			return err
 		}
 		if err := gitClient.EnsureMainBranch(ctx, root); err != nil {
+			return err
+		}
+		// Replay any persisted pending git operations before recovery commit
+		queue := queueRegistry.For(item.ID, root)
+		if err := queue.ReplayPending(ctx); err != nil {
 			return err
 		}
 		if _, err := gitClient.RecoveryCommit(ctx, root); err != nil {
