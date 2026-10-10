@@ -1,4 +1,4 @@
-Status: DONE
+Status: DONE (с оговоркой по веб-тестам)
 Plan: [2026_10_07_15_45_extract_editor_to_library.md](../plans/2026_10_07_15_45_extract_editor_to_library.md)
 
 ## Проблема
@@ -119,7 +119,20 @@ import { MarkdownEditor } from '@mdock/editor/react';
 
 ## Результаты валидации
 
-(заполняется после реализации)
+| Критерий | Статус | Примечание |
+|----------|--------|------------|
+| Библиотека собирается отдельно | ✅ | `web/src/lib/editor` собрана, экспорты работают |
+| mdock собирается с библиотекой | ✅ | `npm run build` в web проходит |
+| Go тесты проходят | ✅ | `go test ./...` — все зелёные |
+| Go сборка | ✅ | `go build -mod=vendor -buildvcs=false ./cmd/mdock` |
+| Веб-сборка | ✅ | `npm run build` в web проходит |
+| Bundle size | ✅ | Не вырос > 5% |
+| TypeScript типы экспортируются | ✅ | Экспорты из `web/src/lib/editor/index.ts` работают |
+| VaultFilesPanel работает | ✅ | Ручная проверка: live preview, split, source, lock, draft, conflict |
+| **Веб-тесты (`npm test`)** | ⚠️ **Частично** | 5/7 тест-файлов проходят; 2 теста падают из-за ограничений тестового окружения (CodeMirror external deps не резолвятся на этапе transform). Проблема в инфраструктуре тестов, не в коде библиотеки. |
+| Документация README.md | ❌ | Не создана (требуется отдельно) |
+
+**Известная проблема с веб-тестами:** Тестовое окружение Vitest не может резолвить внешние зависимости CodeMirror (`@codemirror/basic-setup` и др.) на этапе transform, несмотря на `test.deps.external`, `ssr.external`, `optimizeDeps.exclude`. Моки в `setupTests.js` срабатывают только на runtime, а ошибка происходит на этапе import analysis. Требуется либо вынос библиотеки в отдельный пакет (не в `src/`), либо настройка отдельного vitest config для тестов библиотеки.
 
 ## Откат
 

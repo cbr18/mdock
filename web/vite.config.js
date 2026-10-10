@@ -9,6 +9,27 @@ export default defineConfig({
       '@mdock/editor': path.resolve(__dirname, 'src/lib/editor'),
     },
   },
+  define: {
+    'import.meta.vitest': 'undefined',
+  },
+  ssr: {
+    external: [
+      '@codemirror/basic-setup',
+      '@codemirror/state',
+      '@codemirror/view',
+      '@codemirror/lang-markdown',
+      '@codemirror/language',
+      '@codemirror/commands',
+      '@codemirror/autocomplete',
+      '@codemirror/search',
+      '@codemirror/lint',
+      '@codemirror/theme-one-dark',
+      '@lezer/markdown',
+      '@lezer/highlight',
+      '@lezer/common',
+      '@uiw/react-codemirror',
+    ],
+  },
   build: {
     outDir: '../webdist/dist',
     emptyOutDir: true,
@@ -88,6 +109,9 @@ export default defineConfig({
         'react-dom',
         'react-dom/client',
       ],
+    },
+    alias: {
+      '@mdock/editor': path.resolve(__dirname, 'src/lib/editor'),
     },
   }
 });
