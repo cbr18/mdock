@@ -409,13 +409,21 @@ func (q *Queue) Enqueue(ctx context.Context, task Task) error {
 			}
 		}
 	}
+	q.armTimerLocked()
+	return nil
+}
+
+// armTimerLocked arms the debounce timer. Must be called with q.mu held.
+func (q *Queue) armTimerLocked() {
+	if q.closed {
+		return
+	}
 	if q.timer != nil {
 		q.timer.Stop()
 	}
 	q.timer = time.AfterFunc(q.debounce, func() {
 		q.flush(context.Background())
 	})
-	return nil
 }
 
 func (q *Queue) persistPending(ctx context.Context, path, source string) error {
@@ -468,10 +476,15 @@ func (q *Queue) RunExclusive(ctx context.Context, fn func(context.Context) error
 }
 
 func (q *Queue) flush(ctx context.Context) error {
+	// Take snapshot of pending under lock, then clear pending
 	q.mu.Lock()
-	paths := make([]string, 0, len(q.pending))
+	snapshot := make(map[string]string, len(q.pending))
+	for k, v := range q.pending {
+		snapshot[k] = v
+	}
+	paths := make([]string, 0, len(snapshot))
 	sources := map[string]struct{}{}
-	for path, source := range q.pending {
+	for path, source := range snapshot {
 		if path != "" {
 			paths = append(paths, path)
 		}
@@ -486,12 +499,14 @@ func (q *Queue) flush(ctx context.Context) error {
 	defer q.runMu.Unlock()
 
 	if err := q.client.Add(ctx, q.repoPath, nil); err != nil {
+		q.restorePending(snapshot)
 		q.setLastErr(err)
 		return err
 	}
 	message := syncCommitMessage(sources, len(paths))
 	_, err := q.client.Commit(ctx, q.repoPath, message)
 	if err != nil {
+		q.restorePending(snapshot)
 		q.setLastErr(err)
 		return err
 	}
@@ -504,6 +519,21 @@ func (q *Queue) flush(ctx context.Context) error {
 	}
 	q.setLastErr(nil)
 	return nil
+}
+
+// restorePending merges the snapshot back into pending (only missing paths)
+// and re-arms the timer if there are pending items.
+func (q *Queue) restorePending(snapshot map[string]string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for path, source := range snapshot {
+		if _, exists := q.pending[path]; !exists {
+			q.pending[path] = source
+		}
+	}
+	if len(q.pending) > 0 {
+		q.armTimerLocked()
+	}
 }
 
 func (q *Queue) clearPending(ctx context.Context) error {

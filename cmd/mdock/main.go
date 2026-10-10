@@ -59,7 +59,7 @@ func run() int {
 			return 1
 		}
 	}
-	vaultService, err := vault.NewService(cfg.VaultsRoot)
+	vaultService, err := vault.NewService(cfg.VaultsRoot, cfg.FsyncWrites)
 	if err != nil {
 		logger.Error("create vault service", "error", err)
 		return 1

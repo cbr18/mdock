@@ -25,6 +25,7 @@ type Config struct {
 	WebDAVBodyLimitBytes  int64
 	AuthRateLimitAttempts int
 	AuthRateLimitWindow   time.Duration
+	FsyncWrites           bool
 }
 
 func Load() (Config, error) {
@@ -39,6 +40,7 @@ func Load() (Config, error) {
 		LockTTL:               30 * time.Second,
 		SessionTTL:            24 * time.Hour,
 		CookieSecure:          getBoolEnv("COOKIE_SECURE", false),
+		FsyncWrites:           getBoolEnv("FSYNC_WRITES", true),
 		APIBodyLimitBytes:     1 << 20,
 		WebDAVBodyLimitBytes:  50 << 20,
 		AuthRateLimitAttempts: 20,

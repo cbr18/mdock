@@ -69,7 +69,7 @@ func New(cfg config.Config, st *store.Store, logger *slog.Logger) (*Service, err
 	if logger == nil {
 		logger = slog.Default()
 	}
-	vaultService, err := vault.NewService(cfg.VaultsRoot)
+	vaultService, err := vault.NewService(cfg.VaultsRoot, cfg.FsyncWrites)
 	if err != nil {
 		return nil, err
 	}

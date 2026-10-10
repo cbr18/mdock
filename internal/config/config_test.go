@@ -73,3 +73,37 @@ func TestLoadRejectsBadDuration(t *testing.T) {
 		t.Fatal("expected bad duration error")
 	}
 }
+
+func TestLoadDefaultFsyncWrites(t *testing.T) {
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.FsyncWrites {
+		t.Fatal("FsyncWrites default should be true")
+	}
+}
+
+func TestLoadFsyncWritesFalse(t *testing.T) {
+	t.Setenv("FSYNC_WRITES", "false")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.FsyncWrites {
+		t.Fatal("FsyncWrites should be false")
+	}
+}
+
+func TestLoadFsyncWritesTrue(t *testing.T) {
+	t.Setenv("FSYNC_WRITES", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.FsyncWrites {
+		t.Fatal("FsyncWrites should be true")
+	}
+}

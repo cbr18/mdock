@@ -1,6 +1,6 @@
 # Git Queue: сохранять pending при ошибке flush
 
-Status: CREATED
+Status: DONE
 Created: 2026-10-07 17:40
 Project: mdock
 Plan: [2026_10_07_17_40_git_queue_flush_error_retention.md](../plans/2026_10_07_17_40_git_queue_flush_error_retention.md)
@@ -143,7 +143,12 @@ func (q *Queue) restorePending(snapshot map[string]string) {
 
 ## Результаты валидации
 
-(заполняется после реализации)
+1. `go test ./internal/git/...` — ✅ PASS (10 тестов)
+2. `go build -mod=vendor -buildvcs=false ./cmd/mdock` — ✅ собирается
+3. `go test ./...` — ✅ PASS (все пакеты)
+4. Симуляция сбоя git: `TestQueueRetainsPendingOnFlushError` — ✅ проходит (pending сохраняется, после восстановления git коммит с правильным сообщением `sync(test): update 1 file`)
+5. `TestQueueRetryArmsTimerAfterError` — ✅ проходит (таймер перевооружён после ошибки)
+6. `TestQueueEnqueueDuringFlushNotLost` — ✅ проходит (задачи, добавленные во время flush, не теряются — первый flush коммитит a.md, второй flush коммитит b.md)
 
 ## Откат
 

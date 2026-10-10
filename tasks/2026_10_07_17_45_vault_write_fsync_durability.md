@@ -1,6 +1,6 @@
 # Vault: fsync при файловых операциях (durability)
 
-Status: CREATED
+Status: DONE
 Created: 2026-10-07 17:45
 Project: mdock
 Plan: [2026_10_07_17_45_vault_write_fsync_durability.md](../plans/2026_10_07_17_45_vault_write_fsync_durability.md)
@@ -126,7 +126,14 @@ func syncDir(path string) error {
 
 ## Результаты валидации
 
-(заполняется после реализации)
+1. `go test ./...` — ✅ PASS (все пакеты, включая новые тесты)
+2. `go build -mod=vendor -buildvcs=false ./cmd/mdock` — ✅ собирается
+3. `FSYNC_WRITES=true` (default): `TestServiceFileOperations` — ✅ проходит (write/read/rename/delete с fsync работают корректно)
+4. `FSYNC_WRITES=false`: `TestFileOperationsWithFsyncDisabled` — ✅ проходит (операции работают без fsync, поведение идентично старому)
+5. `TestSyncFileMissingPath` — ✅ проходит (syncFile на несуществующем пути возвращает ошибку)
+6. `TestSyncDirExistingDir` — ✅ проходит (syncDir на существующем каталоге не возвращает ошибку)
+7. `internal/config/config_test.go` — ✅ покрывает default `FSYNC_WRITES=true` и парсинг `FSYNC_WRITES=false`
+8. Исправлена pre-existing проблема с symlink resolution на macOS (`/tmp` → `/private/tmp`) в `Resolve` — теперь тесты проходят на всех платформах
 
 ## Откат
 
