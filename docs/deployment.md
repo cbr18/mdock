@@ -17,6 +17,7 @@ COMMIT_DEBOUNCE=5s
 LOCK_TTL=30s
 SESSION_TTL=24h
 COOKIE_SECURE=true
+FSYNC_WRITES=true
 FIRST_ADMIN_TOKEN=<one-time setup token>
 ```
 
@@ -59,6 +60,94 @@ Backup создаёт SQL-файл с DDL и DML вида:
 ```
 
 Deploy script запускает SQL backup перед обновлением compose stack.
+
+## SQL Restore
+
+Восстановление SQLite из backup:
+
+```bash
+./scripts/restore-sql.sh --data-dir /data --backup-file /backups/mdock-20260814T120000Z.sql
+```
+
+Скрипт:
+1. Проверяет целостность backup файла (PRAGMA integrity_check)
+2. Создаёт pre-restore backup текущей БД (`app.db.pre-restore-<timestamp>`)
+3. Восстанавливает из backup
+4. Верифицирует восстановленную БД
+
+После restore нужно перезапустить mdock:
+```bash
+docker compose restart mdock
+```
+
+## Backup Verification
+
+Проверка целостности backup и текущего состояния:
+
+```bash
+./scripts/verify-backup.sh --data-dir /data --vaults-root /vaults [--backup-file /backups/mdock-*.sql]
+```
+
+Проверяет:
+- SQLite integrity_check
+- Наличие и заполненность core таблиц (users, vaults, vault_members, sessions, file_locks)
+- Git fsck для каждого vault repo
+- Читаемость sample файлов
+- Опционально: восстановление backup во временную БД и проверка структуры
+
+## Update Script
+
+Автоматизированное обновление с pre-flight проверками:
+
+```bash
+# Проверить доступные обновления
+./scripts/update.sh --check
+
+# Обновить до последнего тега
+./scripts/update.sh --apply --yes
+
+# Обновить до конкретного тега
+./scripts/update.sh --apply --target v0.1.0-alpha.1 --yes
+
+# Обновить из ветки main
+./scripts/update.sh --apply --branch main --yes
+```
+
+Pre-flight проверки при `--apply`:
+1. Чистое git working tree
+2. SQL backup создаётся и верифицируется через `verify-backup.sh`
+3. Проверка дискового пространства
+4. Только потом запускает `deploy-prod.sh`
+
+## Verified Upgrade Test
+
+CI job `.forgejo/workflows/upgrade-test.yml` проверяет upgrade path:
+1. Деплоит предыдущий релизный тег
+2. Сидит тестовые данные (user, vault, files, git history)
+3. Обновляет до текущей версии через `update.sh`
+4. Верифицирует: все файлы доступны, git history сохранён, WebDAV работает, версия обновилась
+
+## Rollback Procedure
+
+При проблемах после обновления:
+
+```bash
+# 1. Остановить mdock
+docker compose stop mdock
+
+# 2. Восстановить SQLite из pre-restore backup (создаётся автоматически при restore)
+cp /data/app.db.pre-restore-<timestamp> /data/app.db
+
+# 3. Вернуть код к предыдущей версии
+git checkout <previous-tag-or-commit>
+
+# 4. Пересобрать и запустить
+docker compose up -d --build
+
+# 5. Верифицировать
+curl http://localhost:8080/healthz
+curl http://localhost:8080/api/version
+```
 
 ## Pipelines
 

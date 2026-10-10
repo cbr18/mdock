@@ -1,7 +1,11 @@
-import CodeMirror from '@uiw/react-codemirror';
-import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
-import { EditorState } from '@codemirror/state';
-import { EditorView, keymap } from '@codemirror/view';
+/**
+ * mdock Markdown Editor - Adapter for @mdock/editor library
+ * Provides mdock-specific toolbar, lock status, i18n integration
+ */
+
+import { useRef, useMemo, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { MarkdownEditor as LibraryMarkdownEditor, useMarkdownEditor } from '@mdock/editor/react';
 import {
   Bold,
   Braces,
@@ -21,34 +25,17 @@ import {
   Rows2,
   Save,
   Sigma,
-  Strikethrough
+  Strikethrough,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useLanguage } from '../i18n/LanguageProvider.jsx';
 import { useTheme } from '../theme/ThemeProvider.jsx';
-import { livePreviewExtension } from './livePreviewExtension.js';
-import { applyCommandToView, COMMANDS, initialFormValues } from './toolbarActions.js';
+import { mdockLivePreviewConfig, MDOCK_COMMANDS, MDOCK_TOOLBAR_GROUPS, MDOCK_PARAM_LABEL_KEYS } from './mdockEditorConfig.js';
+import { COMMANDS as LIB_COMMANDS, applyCommandToView, initialFormValues } from '@mdock/editor';
+import { getGroupIcon, getCommandIcon } from './editorIcons';
+import { lockStatusKey } from './markdownUtils';
 
-const MAC = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
-const MOD = MAC ? 'Meta' : 'Ctrl';
-
-const PARAM_LABEL_KEYS = {
-  url: 'formUrl',
-  label: 'formLabel',
-  alt: 'formAlt',
-  target: 'formTarget',
-  alias: 'formAlias',
-  title: 'formTitle',
-  type: 'formType',
-  rows: 'formRows',
-  cols: 'formColumns',
-  id: 'formId',
-  text: 'formText',
-  key: 'formKey',
-  value: 'formValue',
-  lang: 'formLanguage'
-};
+// Merge library commands with mdock-specific commands
+const COMMANDS = { ...LIB_COMMANDS, ...MDOCK_COMMANDS };
 
 const FORM_MENU = {
   codeBlock: 'paragraph',
@@ -59,115 +46,157 @@ const FORM_MENU = {
   table: 'insert',
   callout: 'insert',
   footnote: 'insert',
-  metadata: 'insert'
+  metadata: 'insert',
 };
 
-export function MarkdownEditor({ value, dirty, lockStatus, readOnly = false, saveDisabled, variant = 'source', onChange, onSave }) {
-  const viewRef = useRef(null);
-  const [openMenu, setOpenMenu] = useState('');
-  const [pendingForm, setPendingForm] = useState('');
+const MAC = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+const MOD = MAC ? 'Meta' : 'Ctrl';
+
+export function MarkdownEditor({
+  value,
+  dirty,
+  lockStatus,
+  readOnly = false,
+  saveDisabled,
+  variant = 'source',
+  onChange,
+  onSave,
+}) {
   const { t } = useLanguage();
   const { theme } = useTheme();
-  const extensions = useMemo(() => {
-    const items = [markdown({ base: markdownLanguage })];
-    if (readOnly) {
-      items.push(EditorState.readOnly.of(true), EditorView.editable.of(false));
+
+  // Build toolbar config with i18n labels
+  const toolbarConfig = useMemo(() => ({
+    groups: Object.values(MDOCK_TOOLBAR_GROUPS).map((group) => ({
+      ...group,
+      label: t(group.label),
+      commands: group.commands.map((cmdId) => {
+        const cmd = COMMANDS[cmdId];
+        return cmd ? { ...cmd, label: t(cmd.label) } : null;
+      }).filter(Boolean),
+    })),
+  }), [t]);
+
+  // Live preview config with localized frontmatter label
+  const livePreviewConfig = useMemo(() => ({
+    ...mdockLivePreviewConfig,
+    frontmatterLabel: t('frontmatter'),
+  }), [t]);
+
+  // Toolbar state
+  const [openMenu, setOpenMenu] = useState('');
+  const [pendingForm, setPendingForm] = useState(null);
+  const editorRef = useRef(null);
+
+  // Get editor instance for running commands
+  const { editor } = useMarkdownEditor({
+    value,
+    readOnly,
+    livePreview: variant === 'live' ? livePreviewConfig : false,
+    onChange,
+  });
+
+  // Store editor ref for toolbar commands
+  useEffect(() => {
+    if (editor) {
+      editorRef.current = editor;
     }
-    if (variant === 'live') {
-      items.push(livePreviewExtension({ frontmatterLabel: t('frontmatter') }), EditorView.editorAttributes.of({ class: 'cm-live-preview' }));
-    }
-    // Keyboard shortcuts
-    items.push(keymap.of([
-      // Save
-      { key: `${MOD}-s`, run: (view) => { if (onSave) { onSave(); return true; } return false; }, preventDefault: true },
-      // Undo/Redo (handled by history extension)
-      { key: `${MOD}-z`, run: (view) => { view.dispatch({ effects: EditorView.undo.of(true) }); return true; } },
-      { key: `${MOD}-y`, run: (view) => { view.dispatch({ effects: EditorView.redo.of(true) }); return true; } },
-      { key: `Shift-${MOD}-z`, run: (view) => { view.dispatch({ effects: EditorView.redo.of(true) }); return true; } },
-      // Select All
-      { key: `${MOD}-a`, run: (view) => { view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } }); return true; } },
-    ]));
-    return items;
-  }, [readOnly, t, variant, onSave]);
-  const codeMirrorTheme = theme === 'light' || theme === 'warm' ? 'light' : 'dark';
+  }, [editor]);
 
   function runCommand(key, values = {}) {
-    if (viewRef.current) applyCommandToView(viewRef.current, key, values);
-    setPendingForm('');
+    if (editorRef.current?.view) {
+      applyCommandToView(editorRef.current.view, key, values);
+    }
+    setPendingForm(null);
     setOpenMenu('');
   }
 
   const formNode = pendingForm ? (
-    <ToolbarForm command={pendingForm} onSubmit={(values) => runCommand(pendingForm, values)} onClose={() => setPendingForm('')} />
+    <ToolbarForm
+      command={pendingForm}
+      onSubmit={(values) => runCommand(pendingForm.id, values)}
+      onClose={() => setPendingForm(null)}
+      t={t}
+    />
   ) : null;
+
   function menuForm(name) {
-    return openMenu === name && FORM_MENU[pendingForm] === name ? formNode : null;
+    return openMenu === name && FORM_MENU[pendingForm?.id] === name ? formNode : null;
   }
+
+  // Save handler
+  const handleSave = () => {
+    if (onSave && !saveDisabled && dirty) {
+      onSave();
+    }
+  };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if ((event.metaKey || event.ctrlKey) && event.key === 's') {
+        event.preventDefault();
+        handleSave();
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onSave, saveDisabled, dirty]);
 
   return (
     <section className="markdown-editor-shell" aria-label={t('markdownEditor')}>
       {!readOnly ? (
         <div className="editor-toolbar" aria-label={t('editorToolbar')}>
-          <button type="button" className="icon-text-button" onClick={onSave} disabled={saveDisabled || !dirty}>
+          <button
+            type="button"
+            className="icon-text-button"
+            onClick={handleSave}
+            disabled={saveDisabled || !dirty}
+          >
             <Save size={16} aria-hidden="true" />
             {t('save')}
           </button>
-          <span className={`editor-lock-status editor-lock-${lockStatus}`} role="status" aria-live="polite">{t(lockStatusKey(lockStatus))}</span>
-          <ToolbarMenu name="paragraph" icon={<Pilcrow size={16} aria-hidden="true" />} label={t('paragraph')} openMenu={openMenu} setOpenMenu={setOpenMenu} form={menuForm('paragraph')}>
-            <CommandButton command="paragraph" icon={<Pilcrow size={16} aria-hidden="true" />} label={t('paragraph')} onRun={runCommand} onOpenForm={setPendingForm} />
-            {[1, 2, 3, 4, 5, 6].map((level) => (
-              <CommandButton key={level} command={`heading${level}`} icon={<Heading size={16} aria-hidden="true" />} label={t(`heading${level}`)} onRun={runCommand} onOpenForm={setPendingForm} />
-            ))}
-            <CommandButton command="quote" icon={<Quote size={16} aria-hidden="true" />} label={t('quote')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="codeBlock" icon={<Code2 size={16} aria-hidden="true" />} label={t('codeBlock')} onRun={runCommand} onOpenForm={setPendingForm} />
-          </ToolbarMenu>
-          <ToolbarMenu name="inline" icon={<Bold size={16} aria-hidden="true" />} label={t('inlineFormatting')} openMenu={openMenu} setOpenMenu={setOpenMenu} form={menuForm('inline')}>
-            <CommandButton command="bold" icon={<Bold size={16} aria-hidden="true" />} label={t('bold')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="italic" icon={<Italic size={16} aria-hidden="true" />} label={t('italic')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="strikethrough" icon={<Strikethrough size={16} aria-hidden="true" />} label={t('strikethrough')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="highlight" icon={<Highlighter size={16} aria-hidden="true" />} label={t('highlight')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="inlineCode" icon={<Code2 size={16} aria-hidden="true" />} label={t('inlineCode')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="comment" icon={<MessageSquare size={16} aria-hidden="true" />} label={t('comment')} onRun={runCommand} onOpenForm={setPendingForm} />
-          </ToolbarMenu>
-          <ToolbarMenu name="lists" icon={<List size={16} aria-hidden="true" />} label={t('listFormatting')} openMenu={openMenu} setOpenMenu={setOpenMenu} form={menuForm('lists')}>
-            <CommandButton command="bulletList" icon={<List size={16} aria-hidden="true" />} label={t('bulletList')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="orderedList" icon={<ListOrdered size={16} aria-hidden="true" />} label={t('orderedList')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="taskList" icon={<CheckSquare size={16} aria-hidden="true" />} label={t('taskList')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="taskDone" icon={<CheckSquare size={16} aria-hidden="true" />} label={t('taskDone')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="indent" label={t('indent')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="outdent" label={t('outdent')} onRun={runCommand} onOpenForm={setPendingForm} />
-          </ToolbarMenu>
-          <ToolbarMenu name="insert" icon={<Rows2 size={16} aria-hidden="true" />} label={t('insert')} openMenu={openMenu} setOpenMenu={setOpenMenu} form={menuForm('insert')}>
-            <CommandButton command="link" icon={<Link size={16} aria-hidden="true" />} label={t('link')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="image" icon={<Image size={16} aria-hidden="true" />} label={t('image')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="wikilink" label={t('wikilink')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="embed" label={t('embed')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="table" icon={<Rows2 size={16} aria-hidden="true" />} label={t('table')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="callout" icon={<Quote size={16} aria-hidden="true" />} label={t('callout')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="horizontalRule" icon={<Minus size={16} aria-hidden="true" />} label={t('horizontalRule')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="inlineMath" icon={<Sigma size={16} aria-hidden="true" />} label={t('inlineMath')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="blockMath" icon={<Sigma size={16} aria-hidden="true" />} label={t('blockMath')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="footnote" label={t('footnote')} onRun={runCommand} onOpenForm={setPendingForm} />
-            <CommandButton command="metadata" icon={<Braces size={16} aria-hidden="true" />} label={t('metadata')} onRun={runCommand} onOpenForm={setPendingForm} />
-          </ToolbarMenu>
+          <span className={`editor-lock-status editor-lock-${lockStatus}`} role="status" aria-live="polite">
+            {t(lockStatusKey(lockStatus))}
+          </span>
+          {toolbarConfig.groups.map((group) => (
+            <ToolbarMenu
+              key={group.name}
+              name={group.name}
+              icon={getGroupIcon(group.name)}
+              label={group.label}
+              openMenu={openMenu}
+              setOpenMenu={setOpenMenu}
+              form={menuForm(group.name)}
+            >
+              {group.commands.map((cmd) => (
+                <CommandButton
+                  key={cmd.id}
+                  command={cmd}
+                  icon={getCommandIcon(cmd.id)}
+                  label={cmd.label}
+                  onRun={runCommand}
+                  onOpenForm={setPendingForm}
+                />
+              ))}
+            </ToolbarMenu>
+          ))}
         </div>
       ) : null}
-      <CodeMirror
+      <LibraryMarkdownEditor
         value={value}
-        aria-label={t('markdownEditor')}
+        onChange={onChange}
+        readOnly={readOnly}
+        variant={variant}
+        livePreviewConfig={livePreviewConfig}
         minHeight="520px"
-        theme={codeMirrorTheme}
-        extensions={extensions}
-        onCreateEditor={(view) => {
-          viewRef.current = view;
-        }}
-        onChange={(nextValue) => onChange(nextValue)}
-        basicSetup={{ foldGutter: true, highlightActiveLine: true, lineNumbers: true }}
+        ariaLabel={t('markdownEditor')}
       />
     </section>
   );
 }
 
+// Toolbar components (moved here from separate file for simplicity)
 function ToolbarMenu({ name, icon, label, openMenu, setOpenMenu, form, children }) {
   const buttonRef = useRef(null);
   const popoverRef = useRef(null);
@@ -253,22 +282,25 @@ function ToolbarMenu({ name, icon, label, openMenu, setOpenMenu, form, children 
 }
 
 function CommandButton({ command, icon, label, onRun, onOpenForm }) {
-  const definition = COMMANDS[command];
-  const hasForm = (definition?.params || []).some((param) => param.type !== 'static');
+  const hasForm = command?.params?.some?.((param) => param.type !== 'static');
   return (
-    <button type="button" className="toolbar-command" title={label} onClick={hasForm ? () => onOpenForm(command) : () => onRun(command)}>
+    <button type="button" className="toolbar-command" title={label} onClick={hasForm ? () => onOpenForm(command.id) : () => onRun(command.id)}>
       {icon}
       <span>{label}</span>
     </button>
   );
 }
 
-function ToolbarForm({ command, onSubmit, onClose }) {
-  const { t } = useLanguage();
-  const definition = COMMANDS[command];
-  const fields = (definition?.params || []).filter((param) => param.type !== 'static');
-  const [values, setValues] = useState(() => initialFormValues(definition));
-  if (!definition || fields.length === 0) {
+function ToolbarForm({ command, onSubmit, onClose, t }) {
+  const fields = (command?.params || []).filter((param) => param.type !== 'static');
+  const [values, setValues] = useState(() => {
+    const initial = {};
+    for (const param of fields) {
+      initial[param.name] = param.default ?? '';
+    }
+    return initial;
+  });
+  if (!command || fields.length === 0) {
     return null;
   }
   function setValue(name, next) {
@@ -282,7 +314,7 @@ function ToolbarForm({ command, onSubmit, onClose }) {
     <form className="toolbar-form" onSubmit={handleSubmit}>
       {fields.map((field) => (
         <label key={field.name} className="toolbar-form-field">
-          <span>{t(PARAM_LABEL_KEYS[field.name] || field.name)}</span>
+          <span>{t(MDOCK_PARAM_LABEL_KEYS[field.name] || field.name)}</span>
           {field.type === 'select' ? (
             <select value={values[field.name]} onChange={(event) => setValue(field.name, event.target.value)}>
               {field.options.map((option) => (
@@ -306,12 +338,4 @@ function ToolbarForm({ command, onSubmit, onClose }) {
       </div>
     </form>
   );
-}
-
-function lockStatusKey(status) {
-  if (status === 'locked') return 'editorLocked';
-  if (status === 'locking') return 'editorLocking';
-  if (status === 'lost') return 'editorLockLost';
-  if (status === 'saving') return 'editorSaving';
-  return 'editorReadonly';
 }

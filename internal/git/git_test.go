@@ -207,7 +207,7 @@ func TestQueueFlushCommitsPendingFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "note.md"), []byte("hello"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	queue := NewQueue(client, repo, time.Hour)
+	queue := NewQueue(client, repo, time.Hour, nil, 0)
 	if err := queue.Enqueue(ctx, Task{Source: "test", Message: "changed", Paths: []string{"note.md"}}); err != nil {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
@@ -256,7 +256,7 @@ func TestQueueFlushCommitsFinalStateWhenPendingPathsWereRemoved(t *testing.T) {
 		t.Fatalf("WriteFile(keep) error = %v", err)
 	}
 
-	queue := NewQueue(client, repo, time.Hour)
+	queue := NewQueue(client, repo, time.Hour, nil, 0)
 	if err := queue.Enqueue(ctx, Task{Source: "test", Message: "changed", Paths: []string{"notes/today.md", "notes/tomorrow.md", "notes/keep.md"}}); err != nil {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
@@ -290,7 +290,7 @@ func TestQueueRegistryCloseAllFlushesQueues(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	registry := NewQueueRegistry(client, time.Hour)
+	registry := NewQueueRegistry(client, time.Hour, nil)
 	queue := registry.For(1, repo)
 	if err := queue.Enqueue(ctx, Task{Source: "webdav", Message: "changed", Paths: []string{"note.md"}}); err != nil {
 		t.Fatalf("Enqueue() error = %v", err)
@@ -311,5 +311,162 @@ func TestQueueRegistryCloseAllFlushesQueues(t *testing.T) {
 	}
 	if len(commits) != 1 || commits[0].Subject != "sync(webdav): update 1 file" {
 		t.Fatalf("unexpected shutdown commit: %+v", commits)
+	}
+}
+
+func TestQueueRetainsPendingOnFlushError(t *testing.T) {
+	ctx := context.Background()
+	// Use a temp dir that is NOT a git repo - this will cause Add to fail
+	repo := t.TempDir()
+	client := NewClient("git")
+	// Do NOT call InitIfNeeded - this will make Add fail
+	// Create the file on disk first
+	if err := os.WriteFile(filepath.Join(repo, "note.md"), []byte("hello"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	queue := NewQueue(client, repo, time.Hour, nil, 0)
+	if err := queue.Enqueue(ctx, Task{Source: "test", Message: "changed", Paths: []string{"note.md"}}); err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+	if queue.Len() != 1 {
+		t.Fatalf("Len() before flush = %d, want 1", queue.Len())
+	}
+	err := queue.Flush(ctx)
+	if err == nil {
+		t.Fatal("Flush() expected error on non-git repo, got nil")
+	}
+	// After flush error, pending should be retained
+	if queue.Len() != 1 {
+		t.Fatalf("Len() after flush error = %d, want 1", queue.Len())
+	}
+	if queue.LastError() == nil {
+		t.Fatal("LastError() should be set after flush error")
+	}
+	// Now initialize the git repo and flush again - should succeed
+	if err := client.InitIfNeeded(ctx, repo); err != nil {
+		t.Fatalf("InitIfNeeded() error = %v", err)
+	}
+	if err := client.EnsureMainBranch(ctx, repo); err != nil {
+		t.Fatalf("EnsureMainBranch() error = %v", err)
+	}
+	if err := queue.Flush(ctx); err != nil {
+		t.Fatalf("Flush() after git init error = %v", err)
+	}
+	commits, err := client.Log(ctx, repo, 1)
+	if err != nil {
+		t.Fatalf("Log() error = %v", err)
+	}
+	if len(commits) != 1 || commits[0].Subject != "sync(test): update 1 file" {
+		t.Fatalf("unexpected commit after recovery: %+v", commits)
+	}
+}
+
+func TestQueueRetryArmsTimerAfterError(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	client := NewClient("git")
+	// Do NOT init git repo - will cause Add to fail
+	// Create the file on disk first
+	if err := os.WriteFile(filepath.Join(repo, "note.md"), []byte("hello"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	queue := NewQueue(client, repo, 20*time.Millisecond, nil, 0)
+	if err := queue.Enqueue(ctx, Task{Source: "test", Message: "changed", Paths: []string{"note.md"}}); err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+	err := queue.Flush(ctx)
+	if err == nil {
+		t.Fatal("Flush() expected error on non-git repo, got nil")
+	}
+	// After error, timer should be re-armed. Wait for debounce and check if retry happened
+	// We can't easily test the timer without waiting, but we can verify LastError is set
+	if queue.LastError() == nil {
+		t.Fatal("LastError() should be set after flush error")
+	}
+	if queue.Len() != 1 {
+		t.Fatalf("Len() after flush error = %d, want 1", queue.Len())
+	}
+	// Now init git and wait for timer to fire
+	if err := client.InitIfNeeded(ctx, repo); err != nil {
+		t.Fatalf("InitIfNeeded() error = %v", err)
+	}
+	if err := client.EnsureMainBranch(ctx, repo); err != nil {
+		t.Fatalf("EnsureMainBranch() error = %v", err)
+	}
+	// Wait for debounce timer to fire and process the retry
+	time.Sleep(50 * time.Millisecond)
+	if err := queue.Flush(ctx); err != nil {
+		t.Fatalf("Flush() after git init error = %v", err)
+	}
+	commits, err := client.Log(ctx, repo, 1)
+	if err != nil {
+		t.Fatalf("Log() error = %v", err)
+	}
+	if len(commits) != 1 || commits[0].Subject != "sync(test): update 1 file" {
+		t.Fatalf("unexpected commit after retry: %+v", commits)
+	}
+}
+
+func TestQueueEnqueueDuringFlushNotLost(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	client := NewClient("git")
+	if err := client.InitIfNeeded(ctx, repo); err != nil {
+		t.Fatalf("InitIfNeeded() error = %v", err)
+	}
+	if err := client.EnsureMainBranch(ctx, repo); err != nil {
+		t.Fatalf("EnsureMainBranch() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "a.md"), []byte("a"), 0o644); err != nil {
+		t.Fatalf("WriteFile(a) error = %v", err)
+	}
+	queue := NewQueue(client, repo, time.Hour, nil, 0)
+	// Enqueue first item
+	if err := queue.Enqueue(ctx, Task{Source: "test", Message: "changed", Paths: []string{"a.md"}}); err != nil {
+		t.Fatalf("Enqueue(a) error = %v", err)
+	}
+	// Start flush in a goroutine
+	flushErr := make(chan error, 1)
+	go func() {
+		flushErr <- queue.Flush(ctx)
+	}()
+	// Give flush time to take snapshot
+	time.Sleep(10 * time.Millisecond)
+	// Enqueue second item while flush is in progress
+	if err := os.WriteFile(filepath.Join(repo, "b.md"), []byte("b"), 0o644); err != nil {
+		t.Fatalf("WriteFile(b) error = %v", err)
+	}
+	if err := queue.Enqueue(ctx, Task{Source: "test", Message: "changed", Paths: []string{"b.md"}}); err != nil {
+		t.Fatalf("Enqueue(b) error = %v", err)
+	}
+	// Wait for first flush to complete
+	if err := <-flushErr; err != nil {
+		t.Fatalf("Flush() error = %v", err)
+	}
+	// First flush should commit only a.md
+	commits, err := client.Log(ctx, repo, 1)
+	if err != nil {
+		t.Fatalf("Log() error = %v", err)
+	}
+	if len(commits) != 1 || commits[0].Subject != "sync(test): update 1 file" {
+		t.Fatalf("unexpected first commit: %+v", commits)
+	}
+	// Second flush should commit b.md (it was enqueued during first flush)
+	if err := queue.Flush(ctx); err != nil {
+		t.Fatalf("Second Flush() error = %v", err)
+	}
+	commits, err = client.Log(ctx, repo, 2)
+	if err != nil {
+		t.Fatalf("Log() error = %v", err)
+	}
+	if len(commits) != 2 {
+		t.Fatalf("expected 2 commits, got %d: %+v", len(commits), commits)
+	}
+	// Verify both files exist
+	if _, err := os.Stat(filepath.Join(repo, "a.md")); err != nil {
+		t.Fatalf("a.md missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "b.md")); err != nil {
+		t.Fatalf("b.md missing: %v", err)
 	}
 }

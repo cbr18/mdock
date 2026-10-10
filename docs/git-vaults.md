@@ -64,6 +64,18 @@ recovery: uncommitted changes on startup
 
 Если в один debounce-window попали изменения из разных источников, используется `sync(mixed)`.
 
+## Обработка ошибок flush
+
+При ошибке git-операции (`git add` или `git commit`) pending paths **не теряются**:
+
+1. **Snapshot вместо очистки**: перед git-операцией делается копия pending; сама in-memory карта очищается, но snapshot сохраняется.
+2. **Восстановление при ошибке**: если `Add` или `Commit` вернул ошибку, snapshot сливается обратно в pending (merge-only-missing — более новые `Enqueue` не затираются).
+3. **Перевооружение таймера**: после восстановления pending переустанавливается debounce-таймер. Повторный flush произойдёт через `debounce` (default 5s), не busy-loop.
+4. **Успешный flush**: при успехе snapshot отбрасывается, persisted pending (SQLite) очищается, `LastError()` сбрасывается в `nil`.
+5. **Observability**: `Len()` и `LastError()` отражают фактическое состояние очереди. При ошибке `Len() > 0`, `LastError() != nil`.
+
+Это поведение работает на уровне in-memory queue и не требует durable SQLite queue. Recovery commit при старте остаётся страховкой на случай жёсткого crash процесса или хоста.
+
 ## Attachments And Binary Files
 
 MVP-решение: коммитим всё содержимое vault как есть, включая картинки, PDF и другие Obsidian attachments.

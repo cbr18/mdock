@@ -40,6 +40,7 @@ func (h *Handler) routes() (http.Handler, error) {
 	r.Get("/healthz", h.health)
 	r.Get("/readyz", h.ready)
 	r.Get("/api/version", h.version)
+	r.Get("/metrics", h.metrics)
 	r.With(h.limitAPIBody).Post("/api/auth/register", h.register)
 	r.With(h.limitAPIBody).Post("/api/auth/login", h.login)
 	r.Group(func(r chi.Router) {
@@ -108,6 +109,24 @@ func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"version": version.Current})
+}
+
+func (h *Handler) metrics(w http.ResponseWriter, r *http.Request) {
+	metrics := NewMetrics()
+	// Wire up collectors from app service
+	if h.app != nil {
+		// Record current git queue status for all vaults
+		vaults, err := h.app.Store().ListVaults(r.Context())
+		if err == nil {
+			for _, v := range vaults {
+				queue, err := h.app.QueueForVault(v)
+				if err == nil && queue != nil {
+					metrics.RecordGitQueueLen(v.Slug, queue.Len())
+				}
+			}
+		}
+	}
+	metrics.Handler().ServeHTTP(w, r)
 }
 
 func (h *Handler) ready(w http.ResponseWriter, r *http.Request) {

@@ -21,6 +21,17 @@ The project is new. Do not assume any previous architecture, service names, depl
 - When changing code, keep related documentation and contract notes up to date in the same task when such documentation exists.
 - Prefer existing project patterns, dependencies, tools, and style over introducing new ones.
 
+## Updates And Data Preservation
+
+- Existing vault notes and files are the most valuable data in this system. Preserving them is a hard requirement, not a best-effort goal.
+- An update, migration, restart, recovery, or deploy must never corrupt, truncate, alter, or delete existing notes.
+- After any update, all existing notes must remain readable and accessible through the same paths in the web UI and WebDAV. Do not rename, move, or hide existing note files as a side effect of an update.
+- Update, recovery, and cleanup logic may only add git commits. It must never rewrite, reset, checkout over, or remove note content in vault working trees.
+- Never run destructive git or file operations (hard reset, forced checkout, `git clean`, broad `rm`, volume cleanup) against vault data or the data directory unless the user explicitly requests it and the safety of the operation is proven.
+- The update flow must take a backup before irreversible steps and must keep the previous state restorable.
+- Any change to storage, migrations, git handling, backup, or the update flow must be verified against real existing data and an upgrade from the previous released version, not only against empty or test data.
+- If an update cannot guarantee that existing notes are preserved and remain accessible, stop and ask the user before implementing or applying it.
+
 ## Negative Scenarios To Avoid
 
 - Do not mix the root production stack and the `test/` stack. Treat them as different environments.

@@ -17,7 +17,7 @@ func TestSafeRelPathAcceptsNormalPath(t *testing.T) {
 }
 
 func TestServiceFileOperations(t *testing.T) {
-	service, err := NewService(t.TempDir())
+	service, err := NewService(t.TempDir(), true)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -48,7 +48,7 @@ func TestServiceFileOperations(t *testing.T) {
 
 func TestServiceRejectsGitAndSymlinkEscape(t *testing.T) {
 	root := t.TempDir()
-	service, err := NewService(root)
+	service, err := NewService(root, true)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -74,5 +74,53 @@ func TestSafeRelPathRejectsTraversalGitAndAbsolute(t *testing.T) {
 		if _, err := SafeRelPath(input); err == nil {
 			t.Fatalf("SafeRelPath(%q) expected error", input)
 		}
+	}
+}
+
+func TestFileOperationsWithFsyncDisabled(t *testing.T) {
+	service, err := NewService(t.TempDir(), false)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := service.WriteFile("admin", "notes/today.md", []byte("hello")); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	data, err := service.ReadFile("admin", "notes/today.md")
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if string(data) != "hello" {
+		t.Fatalf("ReadFile() = %q", data)
+	}
+	if err := service.Mkdir("admin", "notes/subdir"); err != nil {
+		t.Fatalf("Mkdir() error = %v", err)
+	}
+	if err := service.Rename("admin", "notes/today.md", "notes/tomorrow.md"); err != nil {
+		t.Fatalf("Rename() error = %v", err)
+	}
+	if err := service.Delete("admin", "notes/tomorrow.md"); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+}
+
+func TestSyncFileMissingPath(t *testing.T) {
+	service, err := NewService(t.TempDir(), true)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	err = service.syncFile("/nonexistent/file")
+	if err == nil {
+		t.Fatal("syncFile on missing path expected error")
+	}
+}
+
+func TestSyncDirExistingDir(t *testing.T) {
+	service, err := NewService(t.TempDir(), true)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	err = service.syncDir(t.TempDir())
+	if err != nil {
+		t.Fatalf("syncDir on existing dir error = %v", err)
 	}
 }

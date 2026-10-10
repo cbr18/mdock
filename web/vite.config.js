@@ -1,12 +1,37 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@mdock/editor': path.resolve(__dirname, 'src/lib/editor'),
+    },
+  },
   build: {
     outDir: '../webdist/dist',
     emptyOutDir: true,
     rollupOptions: {
+      external: [
+        '@codemirror/basic-setup',
+        '@codemirror/state',
+        '@codemirror/view',
+        '@codemirror/lang-markdown',
+        '@codemirror/language',
+        '@codemirror/commands',
+        '@codemirror/autocomplete',
+        '@codemirror/search',
+        '@codemirror/lint',
+        '@codemirror/theme-one-dark',
+        '@lezer/markdown',
+        '@lezer/highlight',
+        '@lezer/common',
+        '@uiw/react-codemirror',
+        'react',
+        'react-dom',
+        'react-dom/client',
+      ],
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
@@ -42,6 +67,27 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    setupFiles: './src/setupTests.js'
+    setupFiles: './src/setupTests.js',
+    deps: {
+      external: [
+        '@codemirror/basic-setup',
+        '@codemirror/state',
+        '@codemirror/view',
+        '@codemirror/lang-markdown',
+        '@codemirror/language',
+        '@codemirror/commands',
+        '@codemirror/autocomplete',
+        '@codemirror/search',
+        '@codemirror/lint',
+        '@codemirror/theme-one-dark',
+        '@lezer/markdown',
+        '@lezer/highlight',
+        '@lezer/common',
+        '@uiw/react-codemirror',
+        'react',
+        'react-dom',
+        'react-dom/client',
+      ],
+    },
   }
 });

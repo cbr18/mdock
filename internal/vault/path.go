@@ -1,10 +1,12 @@
 package vault
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -49,10 +51,11 @@ type Info struct {
 }
 
 type Service struct {
-	root string
+	root        string
+	fsyncWrites bool
 }
 
-func NewService(root string) (*Service, error) {
+func NewService(root string, fsyncWrites bool) (*Service, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return nil, fmt.Errorf("resolve vaults root: %w", err)
@@ -60,7 +63,7 @@ func NewService(root string) (*Service, error) {
 	if err := os.MkdirAll(abs, 0o755); err != nil {
 		return nil, fmt.Errorf("create vaults root: %w", err)
 	}
-	return &Service{root: abs}, nil
+	return &Service{root: abs, fsyncWrites: fsyncWrites}, nil
 }
 
 func (s *Service) VaultRoot(vaultPath string) (string, error) {
@@ -101,6 +104,14 @@ func (s *Service) Resolve(vaultPath, relPath string) (string, string, error) {
 	root, err := s.EnsureVault(vaultPath)
 	if err != nil {
 		return "", "", err
+	}
+	// Resolve root symlinks to handle macOS /tmp -> /private/tmp and similar
+	rootEval, err := filepath.EvalSymlinks(root)
+	if err != nil && !os.IsNotExist(err) {
+		return "", "", fmt.Errorf("resolve root symlinks: %w", err)
+	}
+	if err == nil {
+		root = rootEval
 	}
 	rel, err := SafeRelPath(relPath)
 	if err != nil {
@@ -197,6 +208,11 @@ func (s *Service) WriteFile(vaultPath, relPath string, data []byte) error {
 	if err := os.WriteFile(full, data, 0o644); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
+	if s.fsyncWrites {
+		if err := s.syncFile(full); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -207,6 +223,11 @@ func (s *Service) Mkdir(vaultPath, relPath string) error {
 	}
 	if err := os.MkdirAll(full, 0o755); err != nil {
 		return fmt.Errorf("create directory: %w", err)
+	}
+	if s.fsyncWrites {
+		if err := s.syncDir(filepath.Dir(full)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -226,6 +247,15 @@ func (s *Service) Rename(vaultPath, oldRelPath, newRelPath string) error {
 	if err := os.Rename(oldFull, newFull); err != nil {
 		return fmt.Errorf("rename path: %w", err)
 	}
+	// Sync both parent directories to persist the rename
+	if s.fsyncWrites {
+		if err := s.syncDir(filepath.Dir(newFull)); err != nil {
+			return err
+		}
+		if err := s.syncDir(filepath.Dir(oldFull)); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -234,8 +264,50 @@ func (s *Service) Delete(vaultPath, relPath string) error {
 	if err != nil {
 		return err
 	}
+	parent := filepath.Dir(full)
 	if err := os.RemoveAll(full); err != nil {
 		return fmt.Errorf("delete path: %w", err)
+	}
+	if s.fsyncWrites {
+		if err := s.syncDir(parent); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// syncFile synchronizes a file to disk.
+func (s *Service) syncFile(path string) error {
+	if !s.fsyncWrites {
+		return nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open file for sync: %w", err)
+	}
+	defer f.Close()
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("sync file: %w", err)
+	}
+	return nil
+}
+
+// syncDir synchronizes a directory to disk.
+// Best-effort: ignores EINVAL, ENOTSUP, ENOSYS for filesystems that don't support directory sync.
+func (s *Service) syncDir(path string) error {
+	if !s.fsyncWrites {
+		return nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open dir for sync: %w", err)
+	}
+	defer f.Close()
+	if err := f.Sync(); err != nil {
+		if errors.Is(err, syscall.EINVAL) || errors.Is(err, syscall.ENOTSUP) || errors.Is(err, syscall.ENOSYS) {
+			return nil
+		}
+		return fmt.Errorf("sync dir: %w", err)
 	}
 	return nil
 }

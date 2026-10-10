@@ -94,6 +94,7 @@ require_cmd() {
 
 require_cmd git
 require_cmd sort
+require_cmd sqlite3
 
 current_version() {
   if [[ -f VERSION ]]; then
@@ -239,5 +240,24 @@ else
 fi
 
 log "running production deploy flow"
+
+# Pre-flight checks
+log "pre-flight checks..."
+# Run SQL backup and capture output path
+backup_path=$("$ROOT_DIR/scripts/backup-sql.sh" 2>/dev/null | tail -1)
+if [[ -n "$backup_path" && -f "$backup_path" ]]; then
+  log "SQL backup created: $backup_path"
+  if ! "$ROOT_DIR/scripts/verify-backup.sh" --data-dir "${DATA_DIR:-/data}" --vaults-root "${VAULTS_ROOT:-/vaults}" --backup-file "$backup_path"; then
+    log "ERROR: backup verification failed"
+    exit 1
+  fi
+  log "backup verification passed"
+else
+  log "WARNING: could not determine backup path, skipping verification"
+fi
+
+# Check disk space
+df -h "$ROOT_DIR" | awk 'NR==2 {print "Disk usage: " $5 " used, " $4 " free"}'
+
 "$ROOT_DIR/scripts/deploy-prod.sh"
 log "done"

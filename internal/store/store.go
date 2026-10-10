@@ -632,3 +632,78 @@ func (s *Store) createVaultForUserTx(ctx context.Context, tx *sql.Tx, userID int
 func pendingVaultPath(slug string) string {
 	return "__pending__-" + slug
 }
+
+type GitQueuePendingItem struct {
+	VaultID   int64
+	Path      string
+	Source    string
+	CreatedAt time.Time
+}
+
+func (s *Store) EnqueuePending(ctx context.Context, vaultID int64, path, source string) error {
+	if vaultID == 0 || path == "" || source == "" {
+		return fmt.Errorf("vault_id, path and source are required")
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO git_queue_pending (vault_id, path, source, created_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(vault_id, path) DO UPDATE SET
+			source = excluded.source,
+			created_at = excluded.created_at
+	`, vaultID, path, source, now)
+	if err != nil {
+		return fmt.Errorf("enqueue pending: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) FlushPending(ctx context.Context, vaultID int64) error {
+	if vaultID == 0 {
+		return fmt.Errorf("vault_id is required")
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM git_queue_pending WHERE vault_id = ?`, vaultID)
+	if err != nil {
+		return fmt.Errorf("flush pending: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListPending(ctx context.Context, vaultID int64) ([]GitQueuePendingItem, error) {
+	if vaultID == 0 {
+		return nil, fmt.Errorf("vault_id is required")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT vault_id, path, source, created_at FROM git_queue_pending WHERE vault_id = ? ORDER BY created_at`, vaultID)
+	if err != nil {
+		return nil, fmt.Errorf("list pending: %w", err)
+	}
+	defer rows.Close()
+	var items []GitQueuePendingItem
+	for rows.Next() {
+		var item GitQueuePendingItem
+		var createdRaw string
+		if err := rows.Scan(&item.VaultID, &item.Path, &item.Source, &createdRaw); err != nil {
+			return nil, fmt.Errorf("scan pending: %w", err)
+		}
+		item.CreatedAt, err = time.Parse(time.RFC3339Nano, createdRaw)
+		if err != nil {
+			return nil, fmt.Errorf("parse created_at: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate pending: %w", err)
+	}
+	return items, nil
+}
+
+func (s *Store) DeletePending(ctx context.Context, vaultID int64, path string) error {
+	if vaultID == 0 || path == "" {
+		return fmt.Errorf("vault_id and path are required")
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM git_queue_pending WHERE vault_id = ? AND path = ?`, vaultID, path)
+	if err != nil {
+		return fmt.Errorf("delete pending: %w", err)
+	}
+	return nil
+}

@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/url"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -17,6 +19,7 @@ import (
 	"github.com/cbr/mdock/internal/locks"
 	"github.com/cbr/mdock/internal/security"
 	"github.com/cbr/mdock/internal/store"
+	"github.com/cbr/mdock/internal/version"
 	"github.com/cbr/mdock/internal/vault"
 )
 
@@ -66,7 +69,7 @@ func New(cfg config.Config, st *store.Store, logger *slog.Logger) (*Service, err
 	if logger == nil {
 		logger = slog.Default()
 	}
-	vaultService, err := vault.NewService(cfg.VaultsRoot)
+	vaultService, err := vault.NewService(cfg.VaultsRoot, cfg.FsyncWrites)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +81,7 @@ func New(cfg config.Config, st *store.Store, logger *slog.Logger) (*Service, err
 		vaultService: vaultService,
 		lockService:  locks.NewService(st.DB()),
 		gitClient:    gitClient,
-		queues:       appgit.NewQueueRegistry(gitClient, cfg.CommitDebounce),
+		queues:       appgit.NewQueueRegistry(gitClient, cfg.CommitDebounce, st.DB()),
 		authLimiter:  security.NewRateLimiter(cfg.AuthRateLimitAttempts, cfg.AuthRateLimitWindow),
 	}, nil
 }
@@ -138,6 +141,10 @@ func (s *Service) Logger() *slog.Logger {
 	return s.logger
 }
 
+func (s *Service) Version() string {
+	return version.Version()
+}
+
 func (s *Service) Shutdown(ctx context.Context) error {
 	return s.queues.CloseAll(ctx)
 }
@@ -157,6 +164,30 @@ func (s *Service) Ready(ctx context.Context) Readiness {
 		checks["vaultsRoot"] = err.Error()
 	}
 	return Readiness{OK: ready, Checks: checks}
+}
+
+func (s *Service) CheckVaultIntegrity(ctx context.Context, vaultPath string) error {
+	// Check git fsck
+	if out, err := exec.CommandContext(ctx, s.gitClient.Bin(), "-C", vaultPath, "fsck", "--strict").CombinedOutput(); err != nil {
+		return fmt.Errorf("git fsck failed: %w: %s", err, string(out))
+	}
+	// Check SQLite integrity
+	if err := s.CheckSQLiteIntegrity(ctx); err != nil {
+		return fmt.Errorf("sqlite integrity check failed: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) CheckSQLiteIntegrity(ctx context.Context) error {
+	var result string
+	err := s.store.DB().QueryRowContext(ctx, `PRAGMA integrity_check`).Scan(&result)
+	if err != nil {
+		return fmt.Errorf("integrity_check pragma: %w", err)
+	}
+	if result != "ok" {
+		return fmt.Errorf("integrity_check returned: %s", result)
+	}
+	return nil
 }
 
 func (s *Service) RegisterUser(ctx context.Context, username, password, setupToken string) (store.User, store.Vault, string, time.Time, error) {
@@ -384,6 +415,13 @@ func (s *Service) PrepareVault(ctx context.Context, item store.Vault) error {
 		return err
 	}
 	if err := s.gitClient.EnsureMainBranch(ctx, root); err != nil {
+		return err
+	}
+	queue, err := s.QueueForVault(item)
+	if err != nil {
+		return err
+	}
+	if err := queue.ReplayPending(ctx); err != nil {
 		return err
 	}
 	_, err = s.gitClient.RecoveryCommit(ctx, root)
