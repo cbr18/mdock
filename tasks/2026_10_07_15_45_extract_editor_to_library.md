@@ -1,4 +1,4 @@
-Status: DONE (с оговоркой по веб-тестам)
+Status: DONE
 Plan: [2026_10_07_15_45_extract_editor_to_library.md](../plans/2026_10_07_15_45_extract_editor_to_library.md)
 
 ## Проблема

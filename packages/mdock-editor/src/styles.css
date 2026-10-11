@@ -1,0 +1,638 @@
+/**
+ * @mdock/editor - CodeMirror 6 styles for Markdown live preview
+ * Import this in your application: import '@mdock/editor/styles.css'
+ * Requires CSS variables defined on :root or .theme-root (see EXPECTED_CSS_VARIABLES in theme.ts)
+ */
+
+/* ==========================================================================
+   Base Editor Shell
+   ========================================================================== */
+
+.markdown-editor-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ==========================================================================
+   Editor Toolbar (optional, can be provided by consumer)
+   ========================================================================== */
+
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+  overflow-x: auto;
+}
+
+.editor-toolbar .icon-text-button {
+  white-space: nowrap;
+}
+
+.editor-lock-status {
+  min-width: max-content;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.editor-lock-locked { color: var(--success); }
+.editor-lock-lost { color: var(--danger); }
+.editor-lock-saving,
+.editor-lock-locking { color: var(--warning); }
+
+.toolbar-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.toolbar-popover {
+  z-index: 100;
+  display: grid;
+  gap: 4px;
+  min-width: 190px;
+  padding: 6px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.toolbar-command {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  background: transparent;
+  color: var(--text-soft);
+  text-align: left;
+}
+
+.toolbar-command small {
+  grid-column: 2;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.toolbar-command:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.toolbar-command-disabled,
+.toolbar-command-disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 0.72;
+}
+
+.toolbar-form {
+  display: grid;
+  gap: 8px;
+  min-width: 220px;
+  padding: 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.toolbar-form-field {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.toolbar-form-field input,
+.toolbar-form-field select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.toolbar-form-field input:focus,
+.toolbar-form-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.toolbar-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* ==========================================================================
+   CodeMirror Base Styles (Source Mode)
+   ========================================================================== */
+
+.markdown-editor-shell .cm-editor {
+  height: 100%;
+  min-height: 520px;
+  background: var(--bg-subtle);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.markdown-editor-shell .cm-scroller {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.markdown-editor-shell .cm-gutters {
+  border-right: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+.markdown-editor-shell .cm-activeLine,
+.markdown-editor-shell .cm-activeLineGutter {
+  background: var(--accent-soft);
+}
+
+.markdown-editor-shell .cm-focused {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.editor-loading-shell {
+  display: grid;
+  place-items: start;
+  height: 100%;
+  min-height: 620px;
+  background: var(--bg-subtle);
+}
+
+/* ==========================================================================
+   Live Preview Mode Styles
+   ========================================================================== */
+
+.cm-live-preview .cm-content {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  min-height: 100%;
+  margin: 0;
+  padding: 34px 46px;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: var(--markdown-font-size, 16px);
+  line-height: 1.62;
+}
+
+.cm-live-preview .cm-line {
+  height: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.cm-live-preview .cm-line.cm-live-active-source-line {
+  box-sizing: border-box;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+  padding: 2px 10px;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+  box-shadow: inset 1px 0 0 var(--border), inset -1px 0 0 var(--border);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: var(--markdown-font-size, 16px);
+  line-height: 1.62;
+}
+
+.cm-live-preview .cm-line.cm-live-active-source-line-first {
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  box-shadow: inset 1px 0 0 var(--border), inset -1px 0 0 var(--border), inset 0 1px 0 var(--border);
+}
+
+.cm-live-preview .cm-line.cm-live-active-source-line-last {
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  box-shadow: inset 1px 0 0 var(--border), inset -1px 0 0 var(--border), inset 0 -1px 0 var(--border);
+}
+
+.cm-live-preview .cm-line.cm-live-active-source-line-first.cm-live-active-source-line-last {
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.cm-live-preview .cm-gutters {
+  display: none;
+}
+
+.cm-live-marker {
+  color: var(--text-muted);
+  opacity: 0.38;
+}
+
+.cm-live-heading-line {
+  color: var(--text);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.cm-live-heading-1 { font-size: 28px; }
+.cm-live-heading-2 { font-size: 23px; }
+.cm-live-heading-3 { font-size: 19px; }
+.cm-live-heading-4,
+.cm-live-heading-5,
+.cm-live-heading-6 { font-size: 16px; }
+
+.cm-live-strong { font-weight: 700; }
+.cm-live-emphasis { font-style: italic; }
+.cm-live-strike { text-decoration: line-through; }
+
+.cm-live-highlight {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--warning) 28%, transparent);
+}
+
+.cm-live-inline-code {
+  padding: 1px 4px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.cm-live-link,
+.cm-live-wikilink {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  text-underline-offset: 3px;
+}
+
+.cm-live-list-line { padding-left: 18px; }
+
+.cm-live-bullet {
+  display: inline-block;
+  width: 18px;
+  margin-left: -18px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.cm-live-task-line { padding-left: 24px; }
+
+.cm-live-task-checkbox {
+  width: 14px;
+  height: 14px;
+  margin: 0 10px 0 -24px;
+  vertical-align: -2px;
+  accent-color: var(--accent);
+}
+
+.cm-live-list-number {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cm-live-quote-line {
+  border-left: 3px solid var(--accent);
+  padding-left: 14px;
+  color: var(--text-muted);
+}
+
+.cm-live-codeblock-line {
+  padding-left: 14px;
+  padding-right: 14px;
+  background: var(--surface-2);
+  color: var(--text-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: var(--markdown-code-font-size, 14px);
+  line-height: 1.55;
+}
+
+.cm-live-code-fence-line {
+  border-top: 1px solid var(--border);
+}
+
+/* ==========================================================================
+   Rendered Block Widgets
+   ========================================================================== */
+
+.cm-live-rendered-block {
+  display: block;
+  box-sizing: border-box;
+  min-height: 24px;
+  margin: 0;
+  padding: 0;
+  cursor: text;
+  line-height: 1.62;
+}
+
+.cm-live-rendered-block .markdown-preview {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  white-space: normal;
+  font-size: var(--markdown-font-size, 16px);
+  line-height: 1.62;
+}
+
+.cm-live-rendered-block .markdown-preview > :first-child {
+  margin-top: 0;
+}
+
+.cm-live-rendered-block .markdown-preview > :last-child {
+  margin-bottom: 0;
+}
+
+.cm-live-rendered-frontmatter .markdown-frontmatter {
+  margin: 0;
+}
+
+.cm-live-rendered-block .markdown-preview > pre,
+.cm-live-rendered-block .markdown-preview code {
+  font-size: var(--markdown-code-font-size, 14px);
+}
+
+.cm-live-rendered-thematicBreak .markdown-preview hr {
+  border: 0;
+  border-top: 1px solid var(--border-strong);
+}
+
+.cm-live-code-language {
+  display: inline-block;
+  margin-left: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.cm-live-frontmatter-line {
+  padding-left: 14px;
+  border-left: 3px solid var(--border-strong);
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: var(--markdown-code-font-size, 14px);
+  line-height: 1.55;
+}
+
+.cm-live-frontmatter-line + .cm-live-frontmatter-line {
+  border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+.cm-live-horizontal-rule-line {
+  padding: 10px 0;
+}
+
+.cm-live-horizontal-rule {
+  display: block;
+  width: 100%;
+  height: 1px;
+  background: var(--border-strong);
+}
+
+.cm-live-table-line {
+  padding: 5px 10px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  background: var(--bg-subtle);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: var(--markdown-code-font-size, 14px);
+  line-height: 1.55;
+}
+
+.cm-live-table-line:first-child {
+  border-top: 1px solid var(--border);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.cm-live-image-label,
+.cm-live-embed-label {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-soft);
+}
+
+/* ==========================================================================
+   View Mode Containers (for split/rendered views)
+   ========================================================================== */
+
+.rendered-preview-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+  padding: 12px;
+  overflow: auto;
+}
+
+.rendered-preview-view .markdown-preview {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.live-document-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  padding: 12px;
+  overflow: auto;
+}
+
+.live-document-view .markdown-editor-shell {
+  height: 100%;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  overflow: hidden;
+}
+
+.live-document-view .markdown-editor-shell .cm-editor {
+  height: 100%;
+  min-height: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.live-document-view .markdown-editor-shell .cm-scroller {
+  border-radius: var(--radius-sm);
+}
+
+.live-document-view .editor-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.split-document-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+  padding: 12px;
+  overflow: auto;
+}
+
+.split-document-view .markdown-preview,
+.split-document-view .markdown-editor-shell {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  min-height: 480px;
+  margin: 0;
+}
+
+/* ==========================================================================
+   Markdown Preview (standalone, for split view right pane)
+   ========================================================================== */
+
+.markdown-preview {
+  min-width: 0;
+  max-width: 980px;
+  width: min(100%, 980px);
+  margin: 18px auto;
+  padding: 34px 46px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text);
+  font-size: var(--markdown-font-size, 16px);
+  line-height: 1.62;
+}
+
+.markdown-preview > :first-child {
+  margin-top: 0;
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4 {
+  margin: 1.4em 0 0.55em;
+  color: var(--text);
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.markdown-preview h1 {
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--border);
+  font-size: 28px;
+}
+
+.markdown-preview h2 {
+  padding-bottom: 0.2em;
+  border-bottom: 1px solid var(--border);
+  font-size: 22px;
+}
+
+.markdown-preview h3 {
+  font-size: 18px;
+}
+
+.markdown-preview p,
+.markdown-preview ul,
+.markdown-preview ol,
+.markdown-preview blockquote,
+.markdown-preview pre,
+.markdown-preview table {
+  margin: 0.85em 0;
+}
+
+.markdown-preview a {
+  color: var(--accent);
+}
+
+.markdown-preview blockquote {
+  padding: 0 0 0 14px;
+  border-left: 3px solid var(--accent);
+  color: var(--text-muted);
+}
+
+.markdown-preview code {
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text-soft);
+  font-size: var(--markdown-code-font-size, 14px);
+}
+
+.markdown-preview pre {
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.markdown-preview pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.markdown-preview table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.markdown-preview th,
+.markdown-preview td {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+}
+
+.markdown-preview th {
+  background: var(--surface-2);
+  color: var(--text-soft);
+}
+
+.markdown-preview input[type="checkbox"] {
+  width: auto;
+  margin-right: 8px;
+}
+
+.markdown-frontmatter {
+  margin-bottom: 18px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.markdown-frontmatter h4 {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.markdown-frontmatter pre {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: inherit;
+}
+
+.empty-preview {
+  padding: 20px 24px;
+  color: var(--text-muted);
+}

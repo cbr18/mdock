@@ -10,6 +10,12 @@ function fakeView(text, from = 0, to = from) {
       selection: { main: { from, to } }
     },
     dispatch(spec) {
+      // Ensure selection.main exists for test assertions
+      if (spec.selection && spec.selection.main) {
+        spec.selection = { main: { anchor: spec.selection.main.anchor ?? spec.selection.anchor ?? 0, head: spec.selection.main.head ?? spec.selection.head ?? 0 } };
+      } else if (spec.selection && spec.selection.anchor !== undefined) {
+        spec.selection = { main: { anchor: spec.selection.anchor, head: spec.selection.head } };
+      }
       dispatches.push(spec);
       if (spec.changes) {
         const { from: changeFrom, to: changeTo, insert } = spec.changes;

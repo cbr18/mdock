@@ -191,6 +191,7 @@ export function MarkdownEditor({
         livePreviewConfig={livePreviewConfig}
         minHeight="520px"
         ariaLabel={t('markdownEditor')}
+        toolbarConfig={toolbarConfig}
       />
     </section>
   );
