@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -175,4 +176,53 @@ func (h *Handler) webDAVDetails(r *http.Request, item store.Vault) webDAVDetails
 		return webDAVDetails{Path: path, DefaultFileRoot: defaultFileRoot}
 	}
 	return webDAVDetails{Path: path, URL: scheme + "://" + host + path, DefaultFileRoot: defaultFileRoot}
+}
+
+func (h *Handler) vaultPagesSearch(w http.ResponseWriter, r *http.Request) {
+	vault, ok := h.userVault(w, r, false)
+	if !ok {
+		return
+	}
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if query == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "query_required"})
+		return
+	}
+	limit := 20
+	if l := strings.TrimSpace(r.URL.Query().Get("limit")); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 100 {
+			limit = v
+		}
+	}
+	results, err := h.app.Store().SearchPageIndex(r.Context(), vault.Slug, query, limit)
+	if err != nil {
+		h.logger.Error("search pages", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		return
+	}
+	type PageResult struct {
+		Path    string `json:"path"`
+		Title   string `json:"title"`
+		Aliases string `json:"aliases"`
+		Preview string `json:"preview"`
+	}
+	resultsList := make([]PageResult, 0, len(results))
+	for _, r := range results {
+		preview := r.Title
+		if r.Tags != "" {
+			preview = r.Tags
+		} else if r.Aliases != "" {
+			preview = r.Aliases
+		}
+		if len(preview) > 120 {
+			preview = preview[:120] + "..."
+		}
+		resultsList = append(resultsList, PageResult{
+			Path:    r.Path,
+			Title:   r.Title,
+			Aliases: r.Aliases,
+			Preview: preview,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": resultsList})
 }
