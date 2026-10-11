@@ -1,4 +1,4 @@
-Status: CREATED
+Status: DONE
 Plan: [2026_10_07_15_50_editor_obsidian_capability_analysis.md](../plans/2026_10_07_15_50_editor_obsidian_capability_analysis.md)
 
 ## Проблема
