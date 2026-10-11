@@ -23,6 +23,7 @@ export { createEditor, createReactEditor } from './core/createEditor';
 // Extensions
 export { livePreviewExtension } from './core/extensions/livePreview';
 export { createEditorTheme } from './core/extensions/theme';
+export { wikilinkAutocomplete, type WikilinkAutocompleteConfig } from './core/extensions/autocomplete';
 
 // Commands
 export { COMMANDS, applyCommandToView, initialFormValues, PARAM_LABEL_KEYS, FORM_MENU } from './core/commands/toolbarCommands';
