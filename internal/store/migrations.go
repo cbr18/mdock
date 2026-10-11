@@ -126,6 +126,56 @@ var migrations = []migration{
 			return err
 		},
 	},
+	{
+		ID:   5,
+		Name: "page_index",
+		Up: func(ctx context.Context, db *sql.DB) error {
+			statements := []string{
+				`CREATE TABLE IF NOT EXISTS page_index (
+					vault_slug TEXT NOT NULL,
+					path TEXT NOT NULL,
+					title TEXT,
+					aliases TEXT,
+					tags TEXT,
+					headings TEXT,
+					blocks TEXT,
+					content_hash TEXT,
+					updated_at INTEGER NOT NULL,
+					PRIMARY KEY (vault_slug, path)
+				);`,
+				`CREATE INDEX IF NOT EXISTS idx_page_index_vault_slug ON page_index(vault_slug);`,
+				`CREATE INDEX IF NOT EXISTS idx_page_index_title ON page_index(vault_slug, title);`,
+				`CREATE INDEX IF NOT EXISTS idx_page_index_aliases ON page_index(vault_slug, aliases);`,
+				`CREATE INDEX IF NOT EXISTS idx_page_index_updated ON page_index(vault_slug, updated_at);`,
+				`CREATE INDEX IF NOT EXISTS idx_page_index_content_hash ON page_index(vault_slug, content_hash);`,
+				`CREATE VIRTUAL TABLE IF NOT EXISTS page_index_fts USING fts5(
+					title, aliases, tags, headings, blocks, content,
+					tokenize='unicode61 remove_diacritics 1'
+				);`,
+				`CREATE TRIGGER IF NOT EXISTS page_index_ai AFTER INSERT ON page_index BEGIN
+					INSERT INTO page_index_fts(rowid, title, aliases, tags, headings, blocks, content) VALUES (new.rowid, new.title, new.aliases, new.tags, new.headings, new.blocks, new.title || ' ' || new.aliases || ' ' || new.tags || ' ' || new.headings || ' ' || new.blocks);
+				END;`,
+				`CREATE TRIGGER IF NOT EXISTS page_index_ad AFTER DELETE ON page_index BEGIN
+					INSERT INTO page_index_fts(page_index_fts, rowid, title, aliases, tags, headings, blocks, content) VALUES ('delete', old.rowid, old.title, old.aliases, old.tags, old.headings, old.blocks, old.title || ' ' || old.aliases || ' ' || old.tags || ' ' || old.headings || ' ' || old.blocks);
+				END;`,
+				`CREATE TRIGGER IF NOT EXISTS page_index_au AFTER UPDATE ON page_index BEGIN
+					INSERT INTO page_index_fts(page_index_fts, rowid, title, aliases, tags, headings, blocks, content) VALUES ('delete', old.rowid, old.title, old.aliases, old.tags, old.headings, old.blocks, old.title || ' ' || old.aliases || ' ' || old.tags || ' ' || old.headings || ' ' || old.blocks);
+					INSERT INTO page_index_fts(rowid, title, aliases, tags, headings, blocks, content) VALUES (new.rowid, new.title, new.aliases, new.tags, new.headings, new.blocks, new.title || ' ' || new.aliases || ' ' || new.tags || ' ' || new.headings || ' ' || new.blocks);
+				END;`,
+			}
+			return execStatements(ctx, db, statements)
+		},
+		Down: func(ctx context.Context, db *sql.DB) error {
+			statements := []string{
+				`DROP TRIGGER IF EXISTS page_index_au;`,
+				`DROP TRIGGER IF EXISTS page_index_ad;`,
+				`DROP TRIGGER IF EXISTS page_index_ai;`,
+				`DROP TABLE IF EXISTS page_index_fts;`,
+				`DROP TABLE IF EXISTS page_index;`,
+			}
+			return execStatements(ctx, db, statements)
+		},
+	},
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {

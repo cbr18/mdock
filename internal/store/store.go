@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -706,4 +707,236 @@ func (s *Store) DeletePending(ctx context.Context, vaultID int64, path string) e
 		return fmt.Errorf("delete pending: %w", err)
 	}
 	return nil
+}
+
+// PageIndex represents a page in the search index
+type PageIndex struct {
+	VaultSlug   string    `json:"vault_slug"`
+	Path        string    `json:"path"`
+	Title       string    `json:"title"`
+	Aliases     string    `json:"aliases"`
+	Tags        string    `json:"tags"`
+	Headings    string    `json:"headings"`
+	Blocks      string    `json:"blocks"`
+	ContentHash string    `json:"content_hash"`
+	UpdatedAt   int64     `json:"updated_at"`
+}
+
+// Heading represents a heading in a page
+type Heading struct {
+	Level  int    `json:"level"`
+	Text   string `json:"text"`
+	Anchor string `json:"anchor"`
+	Line   int    `json:"line"`
+}
+
+// BlockRef represents a block reference in a page
+type BlockRef struct {
+	ID      string `json:"id"`
+	Heading string `json:"heading"`
+	Line    int    `json:"line"`
+}
+
+// UpsertPageIndex inserts or updates a page in the search index
+func (s *Store) UpsertPageIndex(ctx context.Context, vaultSlug, path, title, aliases, tags, headings, blocks, contentHash string) error {
+	now := time.Now().UnixMilli()
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO page_index (vault_slug, path, title, aliases, tags, headings, blocks, content_hash, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(vault_slug, path) DO UPDATE SET
+			title = excluded.title,
+			aliases = excluded.aliases,
+			tags = excluded.tags,
+			headings = excluded.headings,
+			blocks = excluded.blocks,
+			content_hash = excluded.content_hash,
+			updated_at = excluded.updated_at
+	`, vaultSlug, path, title, aliases, tags, headings, blocks, contentHash, now)
+	if err != nil {
+		return fmt.Errorf("upsert page index: %w", err)
+	}
+	return nil
+}
+
+// DeletePageIndex removes a page from the search index
+func (s *Store) DeletePageIndex(ctx context.Context, vaultSlug, path string) error {
+	if vaultSlug == "" || path == "" {
+		return fmt.Errorf("vault_slug and path are required")
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM page_index WHERE vault_slug = ? AND path = ?`, vaultSlug, path)
+	if err != nil {
+		return fmt.Errorf("delete page index: %w", err)
+	}
+	return nil
+}
+
+// GetPageIndex retrieves a page from the search index
+func (s *Store) GetPageIndex(ctx context.Context, vaultSlug, path string) (*PageIndex, error) {
+	if vaultSlug == "" || path == "" {
+		return nil, fmt.Errorf("vault_slug and path are required")
+	}
+	row := s.db.QueryRowContext(ctx, `
+		SELECT vault_slug, path, title, aliases, tags, headings, blocks, content_hash, updated_at
+		FROM page_index WHERE vault_slug = ? AND path = ?
+	`, vaultSlug, path)
+	var pi PageIndex
+	var aliases, tags, headings, blocks sql.NullString
+	var updatedAt sql.NullInt64
+	err := row.Scan(&pi.VaultSlug, &pi.Path, &pi.Title, &aliases, &tags, &headings, &blocks, &pi.ContentHash, &updatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get page index: %w", err)
+	}
+	if aliases.Valid {
+		pi.Aliases = aliases.String
+	}
+	if tags.Valid {
+		pi.Tags = tags.String
+	}
+	if headings.Valid {
+		pi.Headings = headings.String
+	}
+	if blocks.Valid {
+		pi.Blocks = blocks.String
+	}
+	if updatedAt.Valid {
+		pi.UpdatedAt = updatedAt.Int64
+	}
+	return &pi, nil
+}
+
+// ListPageIndex returns a paginated list of pages in the index
+func (s *Store) ListPageIndex(ctx context.Context, vaultSlug string, offset, limit int) ([]PageIndex, int, error) {
+	if vaultSlug == "" {
+		return nil, 0, fmt.Errorf("vault_slug is required")
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	// Get total count
+	var total int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM page_index WHERE vault_slug = ?`, vaultSlug).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("count page index: %w", err)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT vault_slug, path, title, aliases, tags, headings, blocks, content_hash, updated_at
+		FROM page_index WHERE vault_slug = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?
+	`, vaultSlug, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list page index: %w", err)
+	}
+	defer rows.Close()
+	var items []PageIndex
+	for rows.Next() {
+		var pi PageIndex
+		var aliases, tags, headings, blocks, contentHash sql.NullString
+		var updatedAt sql.NullInt64
+		err := rows.Scan(&pi.VaultSlug, &pi.Path, &pi.Title, &aliases, &tags, &headings, &blocks, &contentHash, &updatedAt)
+		if err != nil {
+			return nil, 0, fmt.Errorf("scan page index: %w", err)
+		}
+		if aliases.Valid {
+			pi.Aliases = aliases.String
+		}
+		if tags.Valid {
+			pi.Tags = tags.String
+		}
+		if headings.Valid {
+			pi.Headings = headings.String
+		}
+		if blocks.Valid {
+			pi.Blocks = blocks.String
+		}
+		if updatedAt.Valid {
+			pi.UpdatedAt = updatedAt.Int64
+		}
+		items = append(items, pi)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate page index: %w", err)
+	}
+	return items, total, nil
+}
+
+// SearchPageIndex performs a fuzzy search on the page index
+func (s *Store) SearchPageIndex(ctx context.Context, vaultSlug, query string, limit int) ([]PageIndex, error) {
+	if vaultSlug == "" || query == "" {
+		return nil, fmt.Errorf("vault_slug and query are required")
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	// Use FTS5 for full-text search
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT pi.vault_slug, pi.path, pi.title, pi.aliases, pi.tags, pi.headings, pi.blocks, pi.content_hash, pi.updated_at
+		FROM page_index pi
+		JOIN page_index_fts fts ON pi.rowid = fts.rowid
+		WHERE pi.vault_slug = ? AND page_index_fts MATCH ?
+		ORDER BY fts.rank
+		LIMIT ?
+	`, vaultSlug, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("search page index: %w", err)
+	}
+	defer rows.Close()
+	var items []PageIndex
+	for rows.Next() {
+		var pi PageIndex
+		var aliases, tags, headings, blocks sql.NullString
+		var updatedAt sql.NullInt64
+		err := rows.Scan(&pi.VaultSlug, &pi.Path, &pi.Title, &aliases, &tags, &headings, &blocks, &pi.ContentHash, &pi.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("scan page index: %w", err)
+		}
+		if aliases.Valid {
+			pi.Aliases = aliases.String
+		}
+		if tags.Valid {
+			pi.Tags = tags.String
+		}
+		if headings.Valid {
+			pi.Headings = headings.String
+		}
+		if blocks.Valid {
+			pi.Blocks = blocks.String
+		}
+		if updatedAt.Valid {
+			pi.UpdatedAt = updatedAt.Int64
+		}
+		items = append(items, pi)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate page index: %w", err)
+	}
+	return items, nil
+}
+
+// GetPageHeadings retrieves headings for a specific page
+func (s *Store) GetPageHeadings(ctx context.Context, vaultSlug, path string) ([]Heading, error) {
+	if vaultSlug == "" || path == "" {
+		return nil, fmt.Errorf("vault_slug and path are required")
+	}
+	row := s.db.QueryRowContext(ctx, `SELECT headings FROM page_index WHERE vault_slug = ? AND path = ?`, vaultSlug, path)
+	var headingsJSON sql.NullString
+	err := row.Scan(&headingsJSON)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get page headings: %w", err)
+	}
+	if !headingsJSON.Valid || headingsJSON.String == "" {
+		return nil, nil
+	}
+	var headings []Heading
+	if err := json.Unmarshal([]byte(headingsJSON.String), &headings); err != nil {
+		return nil, fmt.Errorf("unmarshal headings: %w", err)
+	}
+	return headings, nil
 }
