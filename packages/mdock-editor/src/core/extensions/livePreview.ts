@@ -10,6 +10,62 @@ import { splitBlocks, getSplitBlocks, blockAtPosition } from '../splitters/block
 import { RenderedMarkdownBlockWidget, RenderedMarkdownDocumentWidget, activeBlockRange, requestLivePreviewMeasure } from '../widgets/RenderedBlockWidget';
 
 /**
+ * Navigate to a page in the vault
+ */
+export function navigateToPage(pagePath: string): void {
+  // Navigate to the page in the web app
+  const baseUrl = window.location.origin + window.location.pathname;
+  const url = new URL(baseUrl);
+  url.searchParams.set('page', pagePath);
+  window.location.href = url.toString();
+}
+
+/**
+ * Show tooltip for wikilink hover
+ */
+let tooltipElement: HTMLElement | null = null;
+
+export function showWikilinkTooltip(event: MouseEvent, pagePath: string): void {
+  hideWikilinkTooltip();
+  
+  // Fetch page preview (first 200 chars of content)
+  fetch(`/api/pages/${encodeURIComponent(event.currentTarget.getAttribute('data-page-path') || '')}/preview`)
+    .then(response => response.text())
+    .then(content => {
+      const tooltip = document.createElement('div');
+      tooltip.className = 'cm-wikilink-tooltip';
+      tooltip.innerHTML = `<strong>${event.currentTarget.textContent}</strong><br>${content.slice(0, 200)}...`;
+      document.body.appendChild(tooltip);
+      
+      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+      tooltip.style.position = 'fixed';
+      tooltip.style.left = `${rect.left}px`;
+      tooltip.style.top = `${rect.bottom + 8}px`;
+      tooltip.style.zIndex = '1000';
+      tooltip.style.maxWidth = '300px';
+      tooltip.style.padding = '8px 12px';
+      tooltip.style.background = 'var(--surface)';
+      tooltip.style.border = '1px solid var(--border)';
+      tooltip.style.borderRadius = '6px';
+      tooltip.style.boxShadow = 'var(--shadow)';
+      tooltip.style.fontSize = '13px';
+      tooltip.style.lineHeight = '1.5';
+      
+      tooltipElement = tooltip;
+    })
+    .catch(() => {
+      // Silently fail if preview fetch fails
+    });
+}
+
+export function hideWikilinkTooltip(): void {
+  if (tooltipElement) {
+    tooltipElement.remove();
+    tooltipElement = null;
+  }
+}
+
+/**
  * State effect for setting the active block
  */
 export const setActiveBlock = StateEffect.define<{
@@ -236,6 +292,78 @@ export function livePreviewExtension(config: LivePreviewConfig = { frontmatterLa
     ])),
     Prec.highest(EditorView.domEventHandlers({
       mousedown: moveCursorInsideActiveLine,
+      click(event, view) {
+        const target = event.target;
+        if (!(target instanceof Element)) return false;
+        
+        // Check if clicked on a wikilink
+        const wikilink = target.closest('.cm-wikilink');
+        if (wikilink) {
+          const pagePath = wikilink.getAttribute('data-page-path');
+          const isNavigation = event.ctrlKey || event.metaKey;
+          
+          if (event.ctrlKey || event.metaKey) {
+            // Ctrl/Cmd+Click -> navigate to page
+            event.preventDefault();
+            event.stopPropagation();
+            navigateToPage(pagePath);
+            return true;
+          }
+          // Regular click - let default behavior handle it (focus block)
+          return false;
+        }
+        
+        return moveCursorInsideActiveLine(event, view);
+      },
+      mouseover(event, view) {
+        // Show tooltip on wikilink hover
+        const target = event.target;
+        if (!(target instanceof Element)) return false;
+        
+        const wikilink = target.closest('.cm-wikilink');
+        if (wikilink) {
+          const pagePath = wikilink.getAttribute('data-page-path');
+          const tooltip = document.createElement('div');
+          tooltip.className = 'cm-wikilink-tooltip';
+          tooltip.textContent = wikilink.textContent || pagePath;
+          tooltip.style.cssText = `
+            position: fixed;
+            left: ${event.clientX + 12}px;
+            top: ${event.clientY + 12}px;
+            z-index: 1000;
+            max-width: 300px;
+            padding: 8px 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            box-shadow: var(--shadow);
+            font-size: 13px;
+            line-height: 1.5;
+            pointer-events: none;
+          `;
+          document.body.appendChild(tooltip);
+          
+          // Store tooltip reference for removal
+          (wikilink as HTMLElement & { _tooltip?: HTMLElement })._tooltip = tooltip;
+          return true;
+        }
+        return false;
+      },
+      mouseout(event, view) {
+        const target = event.target;
+        if (!(target instanceof Element)) return false;
+        
+        const wikilink = target.closest('.cm-wikilink');
+        if (wikilink) {
+          const tooltip = (wikilink as HTMLElement & { _tooltip?: HTMLElement })._tooltip;
+          if (tooltip) {
+            tooltip.remove();
+            delete (wikilink as HTMLElement & { _tooltip?: HTMLElement })._tooltip;
+          }
+          return true;
+        }
+        return false;
+      },
       keydown(event, view) {
         if ((event.key !== 'ArrowUp' && event.key !== 'ArrowDown') || event.altKey || event.ctrlKey || event.metaKey) {
           return false;

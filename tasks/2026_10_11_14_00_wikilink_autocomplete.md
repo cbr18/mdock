@@ -1,4 +1,4 @@
-Status: CREATED
+Status: DONE
 Plan: [2026_10_11_14_00_wikilink_autocomplete.md](../plans/2026_10_11_14_00_wikilink_autocomplete.md)
 
 ## Проблема

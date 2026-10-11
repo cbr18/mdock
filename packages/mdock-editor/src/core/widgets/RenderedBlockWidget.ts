@@ -81,6 +81,203 @@ export function rangesIntersect(leftFrom: number, leftTo: number, rightFrom: num
 }
 
 /**
+ * Process wikilinks in markdown text and convert to React elements with click handlers
+ * Handles [[Page]] and [[Page|Alias]] syntax
+ */
+export interface WikilinkMatch {
+  pagePath: string;
+  alias: string | null;
+  fullMatch: string;
+}
+
+export function findWikilinks(text: string): WikilinkMatch[] {
+  const matches: Array<{ pagePath: string; alias: string | null; fullMatch: string }> = [];
+  const regex = /\[\[([^\|\]]+)(?:\|([^\]]+))?\]\]/g;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    matches.push({
+      pagePath: match[1],
+      alias: match[2] || null,
+      fullMatch: match[0],
+    });
+  }
+  return matches;
+}
+
+/**
+ * Process wikilinks in markdown and convert to React elements with click handlers
+ * Handles [[Page]] and [[Page|Alias]] syntax
+ */
+export function processWikilinks(
+  markdown: string,
+  onWikilinkClick: (pagePath: string, alias: string | null) => void
+): React.ReactNode {
+  const matches: Array<{ pagePath: string; alias: string | null; fullMatch: string }> = [];
+  const regex = /\[\[([^\|\]]+)(?:\|([^\]]+))?\]\]/g;
+  let match;
+  while ((match = regex.exec(markdown)) !== null) {
+    matches.push({
+      pagePath: match[1],
+      alias: match[2] || null,
+      fullMatch: match[0],
+    });
+  }
+
+  if (matches.length === 0) {
+    // No wikilinks, render normally
+    return React.createElement(ReactMarkdown, {}, markdown);
+  }
+
+  // Split markdown by wikilinks and create elements
+  const elements: React.ReactNode[] = [];
+  let lastIndex = 0;
+
+  for (const match of matches) {
+    const matchIndex = markdown.indexOf(match.fullMatch, lastIndex);
+    if (matchIndex > lastIndex) {
+      const beforeText = markdown.slice(lastIndex, matchIndex);
+      if (beforeText) {
+        elements.push(beforeText);
+      }
+    }
+
+    // Add the wikilink as an interactive element
+    elements.push(
+      React.createElement(
+        'a',
+        {
+          className: 'cm-wikilink',
+          href: '#',
+          'data-page-path': match.pagePath,
+          onClick: (e: React.MouseEvent<HTMLAnchorElement>) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const isNavigation = (window.navigator.platform.includes('Mac') ? e.metaKey : e.ctrlKey);
+            if (isNavigation) {
+              // Navigation will be handled by the widget's click handler
+            }
+          }
+        },
+        match.alias || match.pagePath
+      )
+    );
+
+    lastIndex = matchIndex + match.fullMatch.length;
+  }
+
+  // Add remaining text
+  if (lastIndex < markdown.length) {
+    elements.push(markdown.slice(lastIndex));
+  }
+
+  return React.createElement('span', {}, ...elements);
+}
+
+/**
+ * Active block range for decoration
+ */
+export function activeBlockRange(block: SplitBlock) {
+  return { from: block.from, to: block.to, sourceTo: block.sourceTo };
+}
+
+/**
+ * Check if a block is the active block
+ */
+export function isActiveBlock(block: SplitBlock, activeBlock: { from: number; sourceTo: number } | null): boolean {
+  if (!activeBlock) return false;
+  return rangesIntersect(block.from, block.sourceTo, activeBlock.from, activeBlock.sourceTo);
+}
+
+/**
+ * Check if two ranges intersect
+ */
+export function rangesIntersect(leftFrom: number, leftTo: number, rightFrom: number, rightTo: number): boolean {
+  return leftFrom < rightTo && rightFrom < leftTo;
+}
+
+/**
+ * Live preview widgets for rendered Markdown blocks
+ * Extracted from livePreviewExtension.js
+ */
+
+import { WidgetType } from '@codemirror/view';
+import { createRoot } from 'react-dom/client';
+import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import type { SplitBlock } from '../types';
+import type { EditorView } from '@codemirror/view';
+
+/**
+ * Cursor position from click event
+ */
+export interface CursorPosition {
+  node: Node;
+  offset: number;
+}
+
+/**
+ * Get cursor position from click coordinates
+ */
+export function caretFromPoint(x: number, y: number): CursorPosition | null {
+  if (typeof document.caretPositionFromPoint === 'function') {
+    const position = document.caretPositionFromPoint(x, y);
+    if (position) {
+      return { node: position.offsetNode, offset: position.offset };
+    }
+  }
+  if (typeof document.caretRangeFromPoint === 'function') {
+    const range = document.caretRangeFromPoint(x, y);
+    if (range) {
+      return { node: range.startContainer, offset: range.startOffset };
+    }
+  }
+  return null;
+}
+
+/**
+ * Get cursor position from click within a block widget
+ */
+export function cursorPositionFromClick(
+  view: EditorView,
+  event: MouseEvent,
+  blockFrom: number,
+  blockTo: number
+): number {
+  const caret = caretFromPoint(event.clientX, event.clientY);
+  if (!caret) return blockFrom;
+
+  try {
+    const position = view.posAtDOM(caret.node, caret.offset);
+    const line = view.state.doc.lineAt(position);
+    return Math.max(line.from, Math.min(position, line.to));
+  } catch {
+    return blockFrom;
+  }
+}
+
+/**
+ * Active block range for decoration
+ */
+export function activeBlockRange(block: SplitBlock) {
+  return { from: block.from, to: block.to, sourceTo: block.sourceTo };
+}
+
+/**
+ * Check if a block is the active block
+ */
+export function isActiveBlock(block: SplitBlock, activeBlock: { from: number; sourceTo: number } | null): boolean {
+  if (!activeBlock) return false;
+  return rangesIntersect(block.from, block.sourceTo, activeBlock.from, activeBlock.sourceTo);
+}
+
+/**
+ * Check if two ranges intersect
+ */
+export function rangesIntersect(leftFrom: number, leftTo: number, rightFrom: number, rightTo: number): boolean {
+  return leftFrom < rightTo && rightFrom < leftTo;
+}
+
+/**
  * Widget for rendering a single markdown block
  */
 export class RenderedMarkdownBlockWidget extends WidgetType {
@@ -147,12 +344,10 @@ export class RenderedMarkdownBlockWidget extends WidgetType {
       );
     }
 
-    return React.createElement('article', { className: 'markdown-preview cm-live-rendered-preview' },
-      React.createElement(ReactMarkdown, {
-        remarkPlugins: renderPlugins?.remark,
-        rehypePlugins: renderPlugins?.rehype,
-      }, block.markdown)
-    );
+    // Process wikilinks in the markdown content
+    return processWikilinks(block.markdown, (pagePath, alias) => {
+      // Click handler for wikilinks - navigation will be handled by the widget
+    });
   }
 }
 
@@ -274,6 +469,6 @@ export function splitFrontmatter(content: string): { frontmatter: string; body: 
   const bodyStart = content.indexOf('\n', end + 4);
   return {
     frontmatter,
-    body: bodyStart === -1 ? '' : content.slice(bodyStart + 1),
+    body: bodyStart === -1 ? '' : content.slice(bodyStart + 1)
   };
 }
