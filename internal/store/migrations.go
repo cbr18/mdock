@@ -176,6 +176,147 @@ var migrations = []migration{
 			return execStatements(ctx, db, statements)
 		},
 	},
+	{
+		ID:   6,
+		Name: "page_index_fts_fix",
+		Up: func(ctx context.Context, db *sql.DB) error {
+			statements := []string{
+				`DROP TRIGGER IF EXISTS page_index_au;`,
+				`DROP TRIGGER IF EXISTS page_index_ad;`,
+				`DROP TRIGGER IF EXISTS page_index_ai;`,
+				`CREATE TRIGGER page_index_ai AFTER INSERT ON page_index BEGIN
+					INSERT INTO page_index_fts(rowid, title, aliases, tags, headings, blocks, content)
+					VALUES (new.rowid,
+						COALESCE(new.title, ''),
+						COALESCE(new.aliases, ''),
+						COALESCE(new.tags, ''),
+						COALESCE(new.headings, ''),
+						COALESCE(new.blocks, ''),
+						COALESCE(new.title, '') || ' ' || COALESCE(new.aliases, '') || ' ' || COALESCE(new.tags, '') || ' ' || COALESCE(new.headings, '') || ' ' || COALESCE(new.blocks, '')
+					);
+				END;`,
+				`CREATE TRIGGER page_index_ad AFTER DELETE ON page_index BEGIN
+					INSERT INTO page_index_fts(page_index_fts, rowid, title, aliases, tags, headings, blocks, content)
+					VALUES ('delete', old.rowid,
+						COALESCE(old.title, ''),
+						COALESCE(old.aliases, ''),
+						COALESCE(old.tags, ''),
+						COALESCE(old.headings, ''),
+						COALESCE(old.blocks, ''),
+						COALESCE(old.title, '') || ' ' || COALESCE(old.aliases, '') || ' ' || COALESCE(old.tags, '') || ' ' || COALESCE(old.headings, '') || ' ' || COALESCE(old.blocks, '')
+					);
+				END;`,
+				`CREATE TRIGGER page_index_au AFTER UPDATE ON page_index BEGIN
+					INSERT INTO page_index_fts(page_index_fts, rowid, title, aliases, tags, headings, blocks, content)
+					VALUES ('delete', old.rowid,
+						COALESCE(old.title, ''),
+						COALESCE(old.aliases, ''),
+						COALESCE(old.tags, ''),
+						COALESCE(old.headings, ''),
+						COALESCE(old.blocks, ''),
+						COALESCE(old.title, '') || ' ' || COALESCE(old.aliases, '') || ' ' || COALESCE(old.tags, '') || ' ' || COALESCE(old.headings, '') || ' ' || COALESCE(old.blocks, '')
+					);
+					INSERT INTO page_index_fts(rowid, title, aliases, tags, headings, blocks, content)
+					VALUES (new.rowid,
+						COALESCE(new.title, ''),
+						COALESCE(new.aliases, ''),
+						COALESCE(new.tags, ''),
+						COALESCE(new.headings, ''),
+						COALESCE(new.blocks, ''),
+						COALESCE(new.title, '') || ' ' || COALESCE(new.aliases, '') || ' ' || COALESCE(new.tags, '') || ' ' || COALESCE(new.headings, '') || ' ' || COALESCE(new.blocks, '')
+					);
+				END;`,
+			}
+			return execStatements(ctx, db, statements)
+		},
+		Down: func(ctx context.Context, db *sql.DB) error {
+			statements := []string{
+				`DROP TRIGGER IF EXISTS page_index_au;`,
+				`DROP TRIGGER IF EXISTS page_index_ad;`,
+				`DROP TRIGGER IF EXISTS page_index_ai;`,
+			}
+			return execStatements(ctx, db, statements)
+		},
+	},
+	{
+		ID:   7,
+		Name: "page_index_fts_simplify",
+		Up: func(ctx context.Context, db *sql.DB) error {
+			statements := []string{
+				`DROP TRIGGER IF EXISTS page_index_au;`,
+				`DROP TRIGGER IF EXISTS page_index_ad;`,
+				`DROP TRIGGER IF EXISTS page_index_ai;`,
+				`DROP TABLE IF EXISTS page_index_fts;`,
+				`CREATE VIRTUAL TABLE page_index_fts USING fts5(
+					title, aliases, tags, headings, blocks,
+					tokenize='unicode61 remove_diacritics 1'
+				);`,
+				`CREATE TRIGGER page_index_ai AFTER INSERT ON page_index BEGIN
+					INSERT INTO page_index_fts(rowid, title, aliases, tags, headings, blocks)
+					VALUES (new.rowid,
+						COALESCE(new.title, ''),
+						COALESCE(new.aliases, ''),
+						COALESCE(new.tags, ''),
+						COALESCE(new.headings, ''),
+						COALESCE(new.blocks, '')
+					);
+				END;`,
+				`CREATE TRIGGER page_index_ad AFTER DELETE ON page_index BEGIN
+					INSERT INTO page_index_fts(page_index_fts, rowid, title, aliases, tags, headings, blocks)
+					VALUES ('delete', old.rowid,
+						COALESCE(old.title, ''),
+						COALESCE(old.aliases, ''),
+						COALESCE(old.tags, ''),
+						COALESCE(old.headings, ''),
+						COALESCE(old.blocks, '')
+					);
+				END;`,
+				`CREATE TRIGGER page_index_au AFTER UPDATE ON page_index BEGIN
+					INSERT INTO page_index_fts(page_index_fts, rowid, title, aliases, tags, headings, blocks)
+					VALUES ('delete', old.rowid,
+						COALESCE(old.title, ''),
+						COALESCE(old.aliases, ''),
+						COALESCE(old.tags, ''),
+						COALESCE(old.headings, ''),
+						COALESCE(old.blocks, '')
+					);
+					INSERT INTO page_index_fts(rowid, title, aliases, tags, headings, blocks)
+					VALUES (new.rowid,
+						COALESCE(new.title, ''),
+						COALESCE(new.aliases, ''),
+						COALESCE(new.tags, ''),
+						COALESCE(new.headings, ''),
+						COALESCE(new.blocks, '')
+					);
+				END;`,
+			}
+			return execStatements(ctx, db, statements)
+		},
+		Down: func(ctx context.Context, db *sql.DB) error {
+			statements := []string{
+				`DROP TRIGGER IF EXISTS page_index_au;`,
+				`DROP TRIGGER IF EXISTS page_index_ad;`,
+				`DROP TRIGGER IF EXISTS page_index_ai;`,
+				`DROP TABLE IF EXISTS page_index_fts;`,
+			}
+			return execStatements(ctx, db, statements)
+		},
+	},
+	{
+		ID:   8,
+		Name: "page_index_disable_fts_triggers",
+		Up: func(ctx context.Context, db *sql.DB) error {
+			statements := []string{
+				`DROP TRIGGER IF EXISTS page_index_au;`,
+				`DROP TRIGGER IF EXISTS page_index_ad;`,
+				`DROP TRIGGER IF EXISTS page_index_ai;`,
+			}
+			return execStatements(ctx, db, statements)
+		},
+		Down: func(ctx context.Context, db *sql.DB) error {
+			return nil
+		},
+	},
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {

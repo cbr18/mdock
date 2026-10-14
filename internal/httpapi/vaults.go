@@ -226,3 +226,94 @@ func (h *Handler) vaultPagesSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": resultsList})
 }
+
+func (h *Handler) vaultPagesIndex(w http.ResponseWriter, r *http.Request) {
+	vault, ok := h.userVault(w, r, false)
+	if !ok {
+		return
+	}
+	offset := 0
+	if o := strings.TrimSpace(r.URL.Query().Get("offset")); o != "" {
+		if v, err := strconv.Atoi(o); err == nil && v >= 0 {
+			offset = v
+		}
+	}
+	limit := 50
+	if l := strings.TrimSpace(r.URL.Query().Get("limit")); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 200 {
+			limit = v
+		}
+	}
+	results, total, err := h.app.Store().ListPageIndex(r.Context(), vault.Slug, offset, limit)
+	if err != nil {
+		h.logger.Error("list pages index", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		return
+	}
+	type PageIndexResult struct {
+		Path        string `json:"path"`
+		Title       string `json:"title"`
+		Aliases     string `json:"aliases"`
+		Tags        string `json:"tags"`
+		Headings    string `json:"headings"`
+		Blocks      string `json:"blocks"`
+		ContentHash string `json:"content_hash"`
+		UpdatedAt   int64  `json:"updated_at"`
+	}
+	resultsList := make([]PageIndexResult, 0, len(results))
+	for _, r := range results {
+		resultsList = append(resultsList, PageIndexResult{
+			Path:        r.Path,
+			Title:       r.Title,
+			Aliases:     r.Aliases,
+			Tags:        r.Tags,
+			Headings:    r.Headings,
+			Blocks:      r.Blocks,
+			ContentHash: r.ContentHash,
+			UpdatedAt:   r.UpdatedAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"results": resultsList,
+		"total":   total,
+		"offset":  offset,
+		"limit":   limit,
+	})
+}
+
+func (h *Handler) vaultPageHeadings(w http.ResponseWriter, r *http.Request) {
+	vault, ok := h.userVault(w, r, false)
+	if !ok {
+		return
+	}
+	path := chi.URLParam(r, "path")
+	if path == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path_required"})
+		return
+	}
+	headings, err := h.app.Store().GetPageHeadings(r.Context(), vault.Slug, path)
+	if err != nil {
+		h.logger.Error("get page headings", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"headings": headings})
+}
+
+func (h *Handler) vaultPagesReindex(w http.ResponseWriter, r *http.Request) {
+	vault, ok := h.userVault(w, r, false)
+	if !ok {
+		return
+	}
+	// Require owner for reindex
+	if vault.Role != store.RoleOwner {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+	if err := h.app.ReindexVault(r.Context(), vault.Path, vault.Slug); err != nil {
+		h.logger.Error("reindex vault", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "reindexed"})
+}

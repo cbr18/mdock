@@ -740,7 +740,17 @@ type BlockRef struct {
 // UpsertPageIndex inserts or updates a page in the search index
 func (s *Store) UpsertPageIndex(ctx context.Context, vaultSlug, path, title, aliases, tags, headings, blocks, contentHash string) error {
 	now := time.Now().UnixMilli()
-	_, err := s.db.ExecContext(ctx, `
+	
+	// Use a transaction to maintain both page_index and page_index_fts
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	
+	// Upsert into page_index
+	var rowid int64
+	err = tx.QueryRowContext(ctx, `
 		INSERT INTO page_index (vault_slug, path, title, aliases, tags, headings, blocks, content_hash, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(vault_slug, path) DO UPDATE SET
@@ -751,11 +761,46 @@ func (s *Store) UpsertPageIndex(ctx context.Context, vaultSlug, path, title, ali
 			blocks = excluded.blocks,
 			content_hash = excluded.content_hash,
 			updated_at = excluded.updated_at
-	`, vaultSlug, path, title, aliases, tags, headings, blocks, contentHash, now)
+		RETURNING rowid
+	`, vaultSlug, path, title, aliases, tags, headings, blocks, contentHash, now).Scan(&rowid)
 	if err != nil {
-		return fmt.Errorf("upsert page index: %w", err)
+		// Fallback for older SQLite: do upsert then query rowid
+		var execErr error
+		if _, execErr = tx.ExecContext(ctx, `
+			INSERT INTO page_index (vault_slug, path, title, aliases, tags, headings, blocks, content_hash, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(vault_slug, path) DO UPDATE SET
+				title = excluded.title,
+				aliases = excluded.aliases,
+				tags = excluded.tags,
+				headings = excluded.headings,
+				blocks = excluded.blocks,
+				content_hash = excluded.content_hash,
+				updated_at = excluded.updated_at
+		`, vaultSlug, path, title, aliases, tags, headings, blocks, contentHash, now); execErr != nil {
+			return fmt.Errorf("upsert page index: %w", execErr)
+		}
+		// Get rowid
+		err = tx.QueryRowContext(ctx, `SELECT rowid FROM page_index WHERE vault_slug = ? AND path = ?`, vaultSlug, path).Scan(&rowid)
+		if err != nil {
+			return fmt.Errorf("get rowid: %w", err)
+		}
 	}
-	return nil
+	
+	// Maintain page_index_fts: delete existing then insert (FTS5 doesn't support ON CONFLICT on virtual tables)
+	_, err = tx.ExecContext(ctx, `DELETE FROM page_index_fts WHERE rowid = ?`, rowid)
+	if err != nil {
+		return fmt.Errorf("delete page index fts: %w", err)
+	}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO page_index_fts(rowid, title, aliases, tags, headings, blocks)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, rowid, title, aliases, tags, headings, blocks)
+	if err != nil {
+		return fmt.Errorf("insert page index fts: %w", err)
+	}
+	
+	return tx.Commit()
 }
 
 // DeletePageIndex removes a page from the search index
@@ -763,11 +808,37 @@ func (s *Store) DeletePageIndex(ctx context.Context, vaultSlug, path string) err
 	if vaultSlug == "" || path == "" {
 		return fmt.Errorf("vault_slug and path are required")
 	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM page_index WHERE vault_slug = ? AND path = ?`, vaultSlug, path)
+	
+	// Use a transaction to maintain both page_index and page_index_fts
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	
+	// Get rowid before delete
+	var rowid int64
+	err = tx.QueryRowContext(ctx, `SELECT rowid FROM page_index WHERE vault_slug = ? AND path = ?`, vaultSlug, path).Scan(&rowid)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil // Already deleted
+		}
+		return fmt.Errorf("get rowid: %w", err)
+	}
+	
+	// Delete from page_index
+	_, err = tx.ExecContext(ctx, `DELETE FROM page_index WHERE vault_slug = ? AND path = ?`, vaultSlug, path)
 	if err != nil {
 		return fmt.Errorf("delete page index: %w", err)
 	}
-	return nil
+	
+	// Delete from page_index_fts
+	_, err = tx.ExecContext(ctx, `DELETE FROM page_index_fts WHERE rowid = ?`, rowid)
+	if err != nil {
+		return fmt.Errorf("delete page index fts: %w", err)
+	}
+	
+	return tx.Commit()
 }
 
 // GetPageIndex retrieves a page from the search index
@@ -852,6 +923,9 @@ func (s *Store) ListPageIndex(ctx context.Context, vaultSlug string, offset, lim
 		}
 		if blocks.Valid {
 			pi.Blocks = blocks.String
+		}
+		if contentHash.Valid {
+			pi.ContentHash = contentHash.String
 		}
 		if updatedAt.Valid {
 			pi.UpdatedAt = updatedAt.Int64

@@ -2,11 +2,14 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -15,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/cbr/mdock/internal/config"
+	"github.com/cbr/mdock/internal/search"
 	appgit "github.com/cbr/mdock/internal/git"
 	"github.com/cbr/mdock/internal/locks"
 	"github.com/cbr/mdock/internal/security"
@@ -589,6 +593,10 @@ func (s *Service) WriteTextFile(ctx context.Context, userID int64, vaultSlug, re
 	}); err != nil {
 		return store.Vault{}, vault.Info{}, err
 	}
+	// Update page index
+	if err := s.UpdatePageIndex(ctx, item.Path, item.Slug, rel); err != nil {
+		s.logger.Error("update page index", "error", err, "vault", item.Slug, "path", rel)
+	}
 	if err := s.enqueueVaultChange(ctx, item, []string{rel}); err != nil {
 		return store.Vault{}, vault.Info{}, err
 	}
@@ -611,6 +619,10 @@ func (s *Service) CreateTextFile(ctx context.Context, userID int64, vaultSlug, r
 		return s.vaultService.WriteFile(item.Path, rel, []byte(content))
 	}); err != nil {
 		return store.Vault{}, vault.Info{}, err
+	}
+	// Update page index
+	if err := s.UpdatePageIndex(ctx, item.Path, item.Slug, rel); err != nil {
+		s.logger.Error("update page index", "error", err, "vault", item.Slug, "path", rel)
 	}
 	if err := s.enqueueVaultChange(ctx, item, []string{rel}); err != nil {
 		return store.Vault{}, vault.Info{}, err
@@ -666,6 +678,10 @@ func (s *Service) MovePath(ctx context.Context, userID int64, vaultSlug, fromPat
 	}); err != nil {
 		return store.Vault{}, err
 	}
+	// Update page index: delete old path, add new path
+	if err := s.UpdatePageIndexPath(ctx, item.Slug, from, to); err != nil {
+		s.logger.Error("update page index path", "error", err, "vault", item.Slug, "from", from, "to", to)
+	}
 	if err := s.enqueueVaultChange(ctx, item, []string{from, to}); err != nil {
 		return store.Vault{}, err
 	}
@@ -700,6 +716,10 @@ func (s *Service) DeletePath(ctx context.Context, userID int64, vaultSlug, relPa
 		return s.vaultService.Delete(item.Path, rel)
 	}); err != nil {
 		return store.Vault{}, err
+	}
+	// Delete from page index
+	if err := s.DeletePageIndex(ctx, item.Slug, rel); err != nil {
+		s.logger.Error("delete page index", "error", err, "vault", item.Slug, "path", rel)
 	}
 	if err := s.enqueueVaultChange(ctx, item, nil); err != nil {
 		return store.Vault{}, err
@@ -828,4 +848,93 @@ func (s *Service) gitContext(ctx context.Context, userID int64, vaultSlug string
 	}
 	queue := s.queues.For(item.ID, root)
 	return item, root, queue, nil
+}
+
+// Page Index methods
+
+func (s *Service) UpdatePageIndex(ctx context.Context, vaultPath, vaultSlug, relPath string) error {
+	content, err := s.vaultService.ReadFile(vaultPath, relPath)
+	if err != nil {
+		return err
+	}
+	if !utf8.Valid(content) {
+		// Binary file, remove from index if exists
+		return s.store.DeletePageIndex(ctx, vaultSlug, relPath)
+	}
+
+	meta := search.ParsePage(string(content))
+	
+	// Compute content hash
+	hash := sha256.Sum256(content)
+	contentHash := hex.EncodeToString(hash[:])
+
+	// Check if content hash changed (optional optimization)
+	existing, err := s.store.GetPageIndex(ctx, vaultSlug, relPath)
+	if err == nil && existing != nil && existing.ContentHash == contentHash {
+		return nil // Unchanged
+	}
+
+	return s.store.UpsertPageIndex(ctx, vaultSlug, relPath,
+		meta.Title,
+		search.MarshalAliases(meta.Aliases),
+		search.MarshalTags(meta.Tags),
+		search.MarshalHeadings(meta.Headings),
+		search.MarshalBlocks(meta.Blocks),
+		contentHash,
+	)
+}
+
+func (s *Service) DeletePageIndex(ctx context.Context, vaultSlug, relPath string) error {
+	return s.store.DeletePageIndex(ctx, vaultSlug, relPath)
+}
+
+func (s *Service) ReindexVault(ctx context.Context, vaultPath, vaultSlug string) error {
+	root, err := s.vaultService.VaultRoot(vaultPath)
+	if err != nil {
+		return err
+	}
+
+	// Walk all markdown files
+	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			// Skip .git directory
+			if info.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		// Only process .md files
+		if !strings.HasSuffix(strings.ToLower(info.Name()), ".md") {
+			return nil
+		}
+		relPath, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		relPath = filepath.ToSlash(relPath)
+		if err := s.UpdatePageIndex(ctx, vaultPath, vaultSlug, relPath); err != nil {
+			s.logger.Error("reindex page failed", "vault", vaultSlug, "path", relPath, "error", err)
+			// Continue indexing other files
+		}
+		return nil
+	})
+}
+
+func (s *Service) UpdatePageIndexPath(ctx context.Context, vaultSlug, oldPath, newPath string) error {
+	// Get existing index entry
+	existing, err := s.store.GetPageIndex(ctx, vaultSlug, oldPath)
+	if err != nil || existing == nil {
+		return nil // Nothing to update
+	}
+	// Delete old path
+	if err := s.store.DeletePageIndex(ctx, vaultSlug, oldPath); err != nil {
+		return err
+	}
+	// Insert at new path
+	return s.store.UpsertPageIndex(ctx, vaultSlug, newPath,
+		existing.Title, existing.Aliases, existing.Tags, existing.Headings, existing.Blocks, existing.ContentHash,
+	)
 }
