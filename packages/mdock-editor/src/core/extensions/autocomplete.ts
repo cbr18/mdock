@@ -32,7 +32,7 @@ export interface WikilinkAutocompleteConfig {
  */
 export function wikilinkAutocomplete(config: WikilinkAutocompleteConfig): Extension {
   const {
-    searchPages,
+    searchPages: searchPagesApi,
     debounceMs = 150,
     minChars = 1,
     maxResults = 10,
@@ -43,6 +43,31 @@ export function wikilinkAutocomplete(config: WikilinkAutocompleteConfig): Extens
   let pendingContext: CompletionContext | null = null;
   let pendingResolve: ((result: CompletionResult) => void) | null = null;
   let pendingReject: ((reason: any) => void) | null = null;
+
+  /**
+   * Execute the search API call
+   */
+  async function executeSearch(query: string, limit: number): Promise<Array<{
+    path: string;
+    title: string;
+    aliases: string;
+    preview: string;
+  }>> {
+    if (!query.trim()) return [];
+
+    try {
+      const results = await searchPagesApi(query, limit);
+      return results.map(r => ({
+        path: r.path,
+        title: r.title,
+        aliases: r.aliases,
+        preview: r.preview,
+      }));
+    } catch (error) {
+      console.error('Wikilink search failed:', error);
+      return [];
+    }
+  }
 
   /**
    * Trigger search with debounce
@@ -62,7 +87,7 @@ export function wikilinkAutocomplete(config: WikilinkAutocompleteConfig): Extens
       // Debounce the search
       debounceTimer = setTimeout(async () => {
         try {
-          const results = await searchPages(context.state.doc.toString(), maxResults);
+          const results = await executeSearch(context.state.doc.toString(), maxResults);
           
           const completions: Completion[] = results.map(page => ({
             label: page.title,
@@ -91,34 +116,6 @@ export function wikilinkAutocomplete(config: WikilinkAutocompleteConfig): Extens
         }
       }, debounceMs);
     });
-  }
-
-  /**
-   * Search pages using the API
-   */
-  async function searchPages(docText: string, limit: number): Promise<Array<{
-    path: string;
-    title: string;
-    aliases: string;
-    preview: string;
-  }>> {
-    // Extract the query from the current position
-    // The query is what's between [[ and the cursor
-    const query = pendingQuery || '';
-    if (!query.trim()) return [];
-
-    try {
-      const results = await searchPages(query, limit);
-      return results.map(r => ({
-        path: r.path,
-        title: r.title,
-        aliases: r.aliases,
-        preview: r.preview,
-      }));
-    } catch (error) {
-      console.error('Wikilink search failed:', error);
-      return [];
-    }
   }
 
   // Extract query from text between [[ and cursor
@@ -171,7 +168,7 @@ export function wikilinkAutocomplete(config: WikilinkAutocompleteConfig): Extens
                   return;
                 }
 
-                const results = await searchPages(pendingQuery, maxResults || 10);
+                const results = await executeSearch(pendingQuery, maxResults || 10);
                 
                 const completions = results.map(page => ({
                   label: page.title,
@@ -180,32 +177,25 @@ export function wikilinkAutocomplete(config: WikilinkAutocompleteConfig): Extens
                   apply: `[[${page.path}]]`,
                   type: 'wikilink',
                   boost: 100,
-                });
+                }));
 
                 resolve({
                   from: context.pos - pendingQuery.length - 2,
                   to: context.pos,
                   options: completions,
                   validFor: /^[\w\s\-\.\/]*$/,
-                  filter: false,
+                  filter: false
                 });
               } catch (error) {
                 reject(error);
               }
             }, debounceMs);
           });
-        },
-      ],
-    },
+        }
+      }
+    ]
   });
 }
-
-// Store state for the autocomplete
-let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-let pendingQuery: string = '';
-let pendingContext: CompletionContext | null = null;
-let pendingResolve: ((result: CompletionResult) => void) | null = null;
-let pendingReject: ((reason: any) => void) | null = null;
 
 // Re-export Completion types
 export type { Completion, CompletionContext, CompletionResult };

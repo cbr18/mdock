@@ -85,7 +85,8 @@ export async function createFolder(page: Page, folderName: string, basePath = '.
 
 export async function openFile(page: Page, fileName: string) {
   await page.getByRole('link', { name: fileName }).click();
-  await page.locator('.markdown-editor-shell, [class*="editor"]').first().waitFor({ state: 'visible', timeout: 15000 });
+  // Wait for either editor or rendered preview to be visible
+  await page.locator('.markdown-editor-shell, .rendered-preview-view, .split-document-view, .live-document-view, [class*="editor"]').first().waitFor({ state: 'visible', timeout: 15000 });
 }
 
 export async function enableEditing(page: Page) {
@@ -118,6 +119,8 @@ export async function switchViewMode(page: Page, mode: 'rendered' | 'plain' | 's
     const button = page.getByRole('tab', { name: label });
     if (await button.isVisible({ timeout: 1000 })) {
       await button.click();
+      // Wait for the view mode to actually change
+      await page.waitForTimeout(500);
       return;
     }
   }

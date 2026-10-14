@@ -21,7 +21,7 @@ test('renders auth form when session is absent', async () => {
 
   expect(await screen.findByRole('heading', { name: 'mdock' })).toBeInTheDocument();
   expect(screen.getByLabelText('Логин')).toBeInTheDocument();
-  expect(screen.getByLabelText('Пароль')).toBeInTheDocument();
+  expect(screen.getByLabelText('Пароль', { selector: 'input' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Войти' })).toBeInTheDocument();
 });
 
@@ -45,7 +45,7 @@ test('logs in and shows vault webdav url', async () => {
   render(<App />);
 
   fireEvent.change(await screen.findByLabelText('Логин'), { target: { value: 'alice' } });
-  fireEvent.change(screen.getByLabelText('Пароль'), { target: { value: 'secret' } });
+  fireEvent.change(screen.getByLabelText('Пароль', { selector: 'input' }), { target: { value: 'secret' } });
   fireEvent.click(screen.getByRole('button', { name: 'Войти' }));
 
   await waitFor(() => expect(screen.getByRole('heading', { name: 'Хранилища' })).toBeInTheDocument());

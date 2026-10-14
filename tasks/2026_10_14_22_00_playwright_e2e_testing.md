@@ -79,10 +79,10 @@ Plan: [2026_10_14_22_00_playwright_e2e_testing.md](../plans/2026_10_14_22_00_pla
 - Go tests: PASS
 - Frontend unit tests: PASS
 - Smoke tests: PASS
-- Playwright tests: 28/67 PASS (42%)
+- Playwright tests: 31/67 PASS (46%)
   - Auth: 5/5 ✓
   - Dashboard: 5/5 ✓
-  - Vault Editor: ~18/30 passing (60%)
+  - Vault Editor: ~21/30 passing (70%) - **critical editor bug FIXED**
   - Settings/Admin: 0/26 passing (0% - need complete rewrite)
 
 # Откат

@@ -90,8 +90,11 @@ func (c *Client) Log(ctx context.Context, repoPath string, limit int) ([]CommitI
 	}
 	out, err := c.run(ctx, repoPath, "log", fmt.Sprintf("-%d", limit), "--date=iso-strict", "--pretty=format:%H%x1f%an%x1f%aI%x1f%s")
 	if err != nil {
-		if strings.Contains(err.Error(), "does not have any commits yet") || strings.Contains(err.Error(), "your current branch") {
-			return nil, nil
+		errStr := err.Error()
+		if strings.Contains(errStr, "does not have any commits yet") ||
+			strings.Contains(errStr, "your current branch") ||
+			strings.Contains(errStr, "не содержит ни одного коммита") {
+			return []CommitInfo{}, nil
 		}
 		return nil, err
 	}

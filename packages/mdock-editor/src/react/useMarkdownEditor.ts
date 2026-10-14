@@ -59,7 +59,7 @@ export function useMarkdownEditor(config: EditorConfig): UseMarkdownEditorReturn
   editorRef.current = editor;
 
   return {
-    editor: mounted ? editor : null,
+    editor,
     mount,
     unmount,
     setValue,

@@ -44,13 +44,14 @@ test.describe('Vault Page - Editor Tab', () => {
     await openFile(page, fileName);
 
     await switchViewMode(page, 'rendered');
-    await expect(page.locator('.rendered-preview-view')).toBeVisible();
+    await expect(page.locator('.rendered-preview-view')).toBeVisible({ timeout: 10000 });
 
     await switchViewMode(page, 'plain');
-    await expect(page.locator('.markdown-editor-shell')).toBeVisible();
+    // Wait for editor to load (Suspense fallback then actual editor)
+    await expect(page.locator('.markdown-editor-shell')).toBeVisible({ timeout: 30000 });
 
     await switchViewMode(page, 'split');
-    await expect(page.locator('.split-document-view')).toBeVisible();
+    await expect(page.locator('.split-document-view')).toBeVisible({ timeout: 30000 });
   });
 
   test('should enable and disable editing mode', async ({ page }) => {

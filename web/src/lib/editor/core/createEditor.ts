@@ -111,10 +111,10 @@ export function createEditor(config: EditorConfig): EditorInstance {
   // Return editor instance
   return {
     get view() {
-      if (!view) {
-        throw new Error('Editor not mounted. Call mount(parent) first.');
-      }
       return view;
+    },
+    get isMounted() {
+      return !!view;
     },
     mount: createView,
     update: (newValue: string) => {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { login, setupFirstAdmin } from '../../api/auth.js';
 import { StatusMessage } from '../../components/ui/StatusMessage.jsx';
 import { useLanguage } from '../i18n/LanguageProvider.jsx';
@@ -10,6 +10,7 @@ export function AuthPage({ onAuthenticated }) {
   const [password, setPassword] = useState('');
   const [setupToken, setSetupToken] = useState('');
   const [message, setMessage] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const { t } = useLanguage();
 
   async function handleAuth(event) {
@@ -59,16 +60,27 @@ export function AuthPage({ onAuthenticated }) {
               onChange={(event) => setUsername(event.target.value)}
             />
           </label>
-          <label>
-            {t('password')}
-            <input
-              autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
-              name="password"
-              required
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
+          <label className="password-label">
+            <span className="visually-hidden">{t('password')}</span>
+            <div className="password-field" role="group" aria-label={t('password')}>
+              <input
+                autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+                name="password"
+                required
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? t('hidePassword') : t('showPassword')}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+              </button>
+            </div>
           </label>
           {authMode === 'setup' ? (
             <label>

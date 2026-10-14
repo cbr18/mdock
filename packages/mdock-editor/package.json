@@ -17,14 +17,17 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
+    "@codemirror/basic-setup": ">=0",
     "@codemirror/lang-markdown": ">=6",
     "@codemirror/state": ">=6",
     "@codemirror/view": ">=6",
     "@lezer/markdown": ">=1",
     "react": ">=18",
-    "react-dom": ">=18"
+    "react-dom": ">=18",
+    "react-markdown": ">=9"
   },
   "devDependencies": {
+    "@codemirror/basic-setup": "^0",
     "@codemirror/lang-markdown": "^6",
     "@codemirror/state": "^6",
     "@codemirror/view": "^6",
@@ -35,6 +38,7 @@
     "jsdom": "^30.1.2",
     "react": "^18",
     "react-dom": "^18",
+    "react-markdown": "^9",
     "typescript": "^5",
     "vite": "^5",
     "vitest": "^1"
