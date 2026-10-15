@@ -139,3 +139,57 @@ The project is new. Do not assume any previous architecture, service names, depl
 - The test Docker stack is started only from the `test/` directory with `docker compose up -d --build`.
 - Do not start the test stack with root-level `docker compose --env-file ... -f test/docker-compose.yml ...` commands.
 - The canonical local test stack URL is `http://127.0.0.1:18081`.
+
+## Full Validation for Large Changes
+
+For **large, cross-cutting, risky, or behavior-changing changes**, the following full validation cycle is mandatory before declaring completion:
+
+### 1. Build & Unit Tests
+```bash
+# Editor library
+cd packages/mdock-editor && npm run build && npm test
+
+# Web app
+cd web && npm run build && npm test
+
+# Backend
+go build ./... && go test ./...
+```
+
+### 2. Test Stack Deployment & Health
+```bash
+# From test/ directory
+cd test && docker compose up -d --build
+
+# Wait for health check
+curl -fsS http://127.0.0.1:18081/healthz
+```
+
+### 3. API Contract Tests
+```bash
+# Authentication flow
+curl -X POST http://127.0.0.1:18081/api/auth/login -H "Content-Type: application/json" -d '{"username":"admin","password":"..."}'
+
+# Vault CRUD
+curl -H "Cookie: mdock_session=..." http://127.0.0.1:18081/api/vaults
+curl -X POST http://127.0.0.1:18081/api/vaults -H "Content-Type: application/json" -d '{"name":"test"}'
+
+# File operations
+curl -H "Cookie: ..." http://127.0.0.1:18081/api/vaults/<slug>/files?path=.
+curl -X POST http://127.0.0.1:18081/api/vaults/<slug>/files -H "Content-Type: application/json" -d '{"path":"test.md","content":"# Test"}'
+
+# Git operations
+curl -H "Cookie: ..." http://127.0.0.1:18081/api/vaults/<slug>/git/status
+```
+
+### 4. UI Smoke Test
+- Open `http://127.0.0.1:18081` in browser
+- Verify: login → vault list → file open → editor (source/preview/split) → save → git sync
+- Check: theme toggle, accent toggle, language switch
+
+### 5. Cleanup
+```bash
+cd test && docker compose down -v
+```
+
+> **Note:** For small, isolated changes (single component, typo fix, config tweak), only the relevant unit tests are required. This full cycle applies to: multi-file refactors, new features, API changes, database migrations, editor behavior changes, auth/security modifications, and cross-component integrations.
