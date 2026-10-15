@@ -182,6 +182,45 @@ vi.mock('@uiw/react-codemirror', () => ({
 }));
 
 // @mdock/editor/react - mock the React components with proper toolbar rendering
+// Translation map for Russian locale used in tests
+const ruLabels = {
+  'Paragraph': 'Абзац',
+  'Inline Formatting': 'Встроенное форматирование',
+  'List Formatting': 'Форматирование списков',
+  'Insert': 'Вставка',
+  'Wikilink': 'Викиссылка',
+  'Embed': 'Встраивание',
+  'Callout': 'Калл-аут',
+  'Metadata': 'Метаданные',
+  'heading1': 'Заголовок 1',
+  'heading2': 'Заголовок 2',
+  'heading3': 'Заголовок 3',
+  'heading4': 'Заголовок 4',
+  'heading5': 'Заголовок 5',
+  'heading6': 'Заголовок 6',
+  'quote': 'Цитата',
+  'codeBlock': 'Блок кода',
+  'bold': 'Жирный',
+  'italic': 'Курсив',
+  'strikethrough': 'Зачёркнутый',
+  'highlight': 'Подсветка',
+  'inlineCode': 'Код',
+  'comment': 'Комментарий',
+  'bulletList': 'Маркированный список',
+  'orderedList': 'Нумерованный список',
+  'taskList': 'Список задач',
+  'taskDone': 'Выполнено',
+  'indent': 'Отступ',
+  'outdent': 'Уменьшить отступ',
+  'link': 'Ссылка',
+  'image': 'Изображение',
+  'table': 'Таблица',
+  'horizontalRule': 'Горизонтальная линия',
+  'inlineMath': 'Инлайн-математика',
+  'blockMath': 'Блок-математика',
+  'footnote': 'Сноска',
+};
+
 vi.mock('@mdock/editor/react', () => ({
   MarkdownEditor: ({ value, onChange, readOnly, variant, livePreviewConfig, minHeight, ariaLabel, toolbarConfig }) => {
     // Render a mock toolbar for testing
@@ -190,20 +229,20 @@ vi.mock('@mdock/editor/react', () => ({
         React.createElement('div', { className: 'editor-toolbar' },
           toolbarConfig.groups.map((group) =>
             React.createElement('div', { key: group.name, className: 'toolbar-menu' },
-              React.createElement('button', { type: 'button', className: 'secondary-button', 'aria-label': group.label },
-                React.createElement('span', null, group.label)
+              React.createElement('button', { type: 'button', className: 'secondary-button', 'aria-label': ruLabels[group.label] || group.label },
+                React.createElement('span', null, ruLabels[group.label] || group.label)
               ),
               group.commands.map((cmd) =>
                 React.createElement('button', {
                   key: cmd.id,
                   type: 'button',
                   className: 'toolbar-command',
-                  'aria-label': cmd.label,
-                  title: cmd.label,
+                  'aria-label': ruLabels[cmd.label] || cmd.label,
+                  title: ruLabels[cmd.label] || cmd.label,
                   role: 'button',
                   onClick: () => {},
                 },
-                  React.createElement('span', null, cmd.label)
+                React.createElement('span', null, ruLabels[cmd.label] || cmd.label)
                 )
               )
             )
@@ -233,6 +272,16 @@ vi.mock('@mdock/editor/react', () => ({
     getValue: vi.fn(() => ''),
     focus: vi.fn(),
   })),
+  ViewPlugin: {
+    fromClass: vi.fn((cls) => {
+      return {
+        plugin: class {
+          constructor(view) { this.view = view; }
+          update(update) {}
+        }
+      };
+    })
+  },
   MarkdownEditorProps: {},
   ToolbarConfig: {},
   UseMarkdownEditorReturn: {},
@@ -280,6 +329,55 @@ vi.mock('@mdock/editor', () => ({
   rangesIntersect: vi.fn(() => false),
   caretFromPoint: vi.fn(() => null),
   splitFrontmatter: vi.fn(() => ({ frontmatter: '', body: '' })),
+  // New exports for P0-1, P0-2, P0-5
+  wikilinkAutocomplete: vi.fn(() => []),
+  mathRenderPlugins: { remark: [], rehype: [] },
+  createMathPlugins: vi.fn(() => ({ remark: [], rehype: [] })),
+  withMath: vi.fn((config) => config),
+  loadKatexStyles: vi.fn(() => Promise.resolve()),
+  isKatexAvailable: vi.fn(() => Promise.resolve(true)),
+  setFocusedBlock: { of: vi.fn(), map: vi.fn(), is: vi.fn() },
+  setActiveBlock: { of: vi.fn(), map: vi.fn(), is: vi.fn() },
+  navigateToPage: vi.fn(),
+  FocusedBlock: {},
+  // New exports for P0-3
+  remarkCallout: vi.fn(() => []),
+  rehypeCallout: vi.fn(() => []),
+  // New exports for P1-1 Embeds
+  remarkEmbed: vi.fn(() => []),
+  rehypeEmbed: vi.fn(() => []),
+  // New exports for P1-2 Mermaid
+  remarkMermaid: vi.fn(() => []),
+  rehypeMermaid: vi.fn(() => []),
+  // New exports for P1-3 Footnotes
+  remarkFootnotes: vi.fn(() => []),
+  rehypeFootnotes: vi.fn(() => []),
+  // Mermaid renderer functions
+  initMermaid: vi.fn(() => Promise.resolve()),
+  updateMermaidTheme: vi.fn(() => Promise.resolve()),
+  autoRenderMermaid: vi.fn(() => Promise.resolve()),
+  rerenderAllDiagrams: vi.fn(() => Promise.resolve()),
+  copyMermaidAsSvg: vi.fn(() => Promise.resolve()),
+  copyMermaidAsPng: vi.fn(() => Promise.resolve()),
+  openMermaidFullscreen: vi.fn(() => Promise.resolve()),
+  // New exports for P1-4 Heading refs
+  slugifyHeading: vi.fn((text) => text.toLowerCase().replace(/\s+/g, '-')),
+  extractHeadings: vi.fn(() => []),
+  detectHeadingChanges: vi.fn(() => ({ changes: [], currentHeadings: [] })),
+  updateWikilinksForHeadingChanges: vi.fn(() => ({ content: '', updated: false })),
+  updateWikilinksInPage: vi.fn(() => ({ content: '', updated: false })),
+  processHeadingRename: vi.fn(() => ({ content: '', updated: false, changes: [] })),
+  computeChanges: vi.fn(() => []),
+  HeadingInfo: {},
+  HeadingChangeResult: {},
+  // Mermaid renderer functions
+  initMermaid: vi.fn(() => Promise.resolve()),
+  updateMermaidTheme: vi.fn(() => Promise.resolve()),
+  autoRenderMermaid: vi.fn(() => Promise.resolve()),
+  rerenderAllDiagrams: vi.fn(() => Promise.resolve()),
+  copyMermaidAsSvg: vi.fn(() => Promise.resolve()),
+  copyMermaidAsPng: vi.fn(() => Promise.resolve()),
+  openMermaidFullscreen: vi.fn(() => Promise.resolve()),
 }));
 
 if (typeof localStorage === 'undefined' || localStorage === null) {

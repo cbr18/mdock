@@ -37,6 +37,8 @@ export default defineConfig({
         '@lezer/highlight',
         '@lezer/common',
         '@uiw/react-codemirror',
+        'react-markdown',
+        'codemirror',
       ],
       output: {
         globals: {

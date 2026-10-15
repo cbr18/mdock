@@ -1006,11 +1006,7 @@ function DocumentView({ content, dirty, editing, lockStatus, mode, selectedFile,
     );
   }
   if (editing) {
-    return (
-      <div className="live-document-view">
-        {liveEditor}
-      </div>
-    );
+    return liveEditor;
   }
   return (
     <div className="rendered-preview-view" aria-label={t('rendered')}>

@@ -75,7 +75,7 @@ export function MarkdownEditor({
     editorConfig.onChange,
   ]);
 
-  // Mount/unmount on container changes
+  // Mount/unmount on container changes - MUST run for all variants
   useEffect(() => {
     if (containerRef.current && !mounted) {
       editor.mount(containerRef.current);
@@ -91,7 +91,7 @@ export function MarkdownEditor({
 
   // Update value when props change
   useEffect(() => {
-    if (mounted && editorRef.current) {
+    if (mounted) {
       editor.update(value);
     }
   }, [value, mounted, editor]);

@@ -81,24 +81,47 @@ export function rangesIntersect(leftFrom: number, leftTo: number, rightFrom: num
 }
 
 /**
- * Process wikilinks in markdown text and convert to React elements with click handlers
- * Handles [[Page]] and [[Page|Alias]] syntax
+ * Extended wikilink match with heading/block references
  */
 export interface WikilinkMatch {
   pagePath: string;
   alias: string | null;
   fullMatch: string;
+  headingRef?: string;
+  blockRef?: string;
 }
 
+/**
+ * Find wikilinks in text
+ * Supports: [[Page]], [[Page|Alias]], [[Page#Heading]], [[Page#^block-id]], [[Page#Heading|Alias]]
+ */
 export function findWikilinks(text: string): WikilinkMatch[] {
-  const matches: Array<{ pagePath: string; alias: string | null; fullMatch: string }> = [];
-  const regex = /\[\[([^\|\]]+)(?:\|([^\]]+))?\]\]/g;
+  const matches: WikilinkMatch[] = [];
+  // Regex captures: pagePath (with optional #heading or #^block), alias
+  const regex = /\[\[([^\|\]]+?)(?:#([^\|\]]+))?(?:\|([^\]]+))?\]\]/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
+    const pagePath = match[1];
+    const ref = match[2]; // heading or ^block-id
+    const alias = match[3] || null;
+    
+    let headingRef: string | undefined;
+    let blockRef: string | undefined;
+    
+    if (ref) {
+      if (ref.startsWith('^')) {
+        blockRef = ref.slice(1);
+      } else {
+        headingRef = ref;
+      }
+    }
+    
     matches.push({
-      pagePath: match[1],
-      alias: match[2] || null,
+      pagePath,
+      alias,
       fullMatch: match[0],
+      headingRef,
+      blockRef,
     });
   }
   return matches;
@@ -106,20 +129,37 @@ export function findWikilinks(text: string): WikilinkMatch[] {
 
 /**
  * Process wikilinks in markdown and convert to React elements with click handlers
- * Handles [[Page]] and [[Page|Alias]] syntax
+ * Handles [[Page]], [[Page|Alias]], [[Page#Heading]], [[Page#^block-id]], [[Page#Heading|Alias]]
  */
 export function processWikilinks(
   markdown: string,
-  onWikilinkClick: (pagePath: string, alias: string | null) => void
+  onWikilinkClick: (pagePath: string, alias: string | null, headingRef?: string, blockRef?: string) => void
 ): React.ReactNode {
-  const matches: Array<{ pagePath: string; alias: string | null; fullMatch: string }> = [];
-  const regex = /\[\[([^\|\]]+)(?:\|([^\]]+))?\]\]/g;
+  const matches: WikilinkMatch[] = [];
+  const regex = /\[\[([^\|\]]+?)(?:#([^\|\]]+))?(?:\|([^\]]+))?\]\]/g;
   let match;
   while ((match = regex.exec(markdown)) !== null) {
+    const pagePath = match[1];
+    const ref = match[2];
+    const alias = match[3] || null;
+    
+    let headingRef: string | undefined;
+    let blockRef: string | undefined;
+    
+    if (ref) {
+      if (ref.startsWith('^')) {
+        blockRef = ref.slice(1);
+      } else {
+        headingRef = ref;
+      }
+    }
+    
     matches.push({
-      pagePath: match[1],
-      alias: match[2] || null,
+      pagePath,
+      alias,
       fullMatch: match[0],
+      headingRef,
+      blockRef,
     });
   }
 
@@ -141,6 +181,14 @@ export function processWikilinks(
       }
     }
 
+    // Build display text
+    let displayText = match.alias || match.pagePath;
+    if (match.headingRef) {
+      displayText = match.alias || `${match.pagePath} > ${match.headingRef}`;
+    } else if (match.blockRef) {
+      displayText = match.alias || `${match.pagePath} > ^${match.blockRef}`;
+    }
+
     // Add the wikilink as an interactive element
     elements.push(
       React.createElement(
@@ -149,16 +197,18 @@ export function processWikilinks(
           className: 'cm-wikilink',
           href: '#',
           'data-page-path': match.pagePath,
+          'data-heading-ref': match.headingRef || '',
+          'data-block-ref': match.blockRef || '',
           onClick: (e: React.MouseEvent<HTMLAnchorElement>) => {
             e.preventDefault();
             e.stopPropagation();
             const isNavigation = (window.navigator.platform.includes('Mac') ? e.metaKey : e.ctrlKey);
             if (isNavigation) {
-              // Navigation will be handled by the widget's click handler
+              onWikilinkClick(match.pagePath, match.alias, match.headingRef, match.blockRef);
             }
           }
         },
-        match.alias || match.pagePath
+        displayText
       )
     );
 
@@ -180,8 +230,10 @@ export class RenderedMarkdownBlockWidget extends WidgetType {
   constructor(
     public readonly block: SplitBlock,
     public readonly frontmatterLabel: string,
+    public readonly setFocusedBlock: any,
     public readonly setActiveBlock: any,
-    public readonly renderPlugins?: { remark?: any[]; rehype?: any[] }
+    public readonly renderPlugins?: { remark?: any[]; rehype?: any[] },
+    public readonly isFocused: boolean = false
   ) {
     super();
   }
@@ -190,25 +242,42 @@ export class RenderedMarkdownBlockWidget extends WidgetType {
     return (
       other.block.markdown === this.block.markdown &&
       other.block.type === this.block.type &&
-      other.frontmatterLabel === this.frontmatterLabel
+      other.frontmatterLabel === this.frontmatterLabel &&
+      other.isFocused === this.isFocused
     );
   }
 
   toDOM(view: EditorView): HTMLElement {
     const container = document.createElement('div');
     container.className = `cm-live-rendered-block cm-live-rendered-${this.block.type}`;
+    if (this.isFocused) {
+      container.classList.add('cm-live-focused-block');
+    }
 
+    // Add block ID as data attribute for block reference targeting
+    if (this.block.blockId) {
+      container.setAttribute('data-block-id', this.block.blockId);
+    }
+
+    // Add touch event listeners for pinch zoom on images, diagrams, PDFs
+    this.addTouchListeners(container);
+
+    // Single click handler - set focused block (cursor position without edit mode)
     container.addEventListener('mousedown', (event) => {
       if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
         return;
       }
-      event.preventDefault();
-      event.stopPropagation();
+      // Don't preventDefault - allow text selection
+      // Don't stopPropagation - let click handler handle double-click detection
 
       const position = cursorPositionFromClick(view, event, this.block.from, this.block.to);
       view.dispatch({
         selection: { anchor: position },
-        effects: this.setActiveBlock.of(activeBlockRange(this.block)),
+        effects: this.setFocusedBlock.of({
+          from: this.block.from,
+          to: this.block.to,
+          sourceTo: this.block.sourceTo,
+        }),
         scrollIntoView: true,
       });
       requestLivePreviewMeasure(view);
@@ -219,6 +288,96 @@ export class RenderedMarkdownBlockWidget extends WidgetType {
     container.__mdockLiveRoot = root;
     root.render(this.renderContent());
     return container;
+  }
+
+  private addTouchListeners(container: HTMLElement): void {
+    let pinchState = {
+      isPinching: false,
+      initialDistance: 0,
+      initialScale: 1,
+      target: null as HTMLElement | null,
+    };
+
+    const getDistance = (touch1: Touch, touch2: Touch): number => {
+      const dx = touch1.clientX - touch2.clientX;
+      const dy = touch1.clientY - touch2.clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+
+    const findPinchTarget = (element: Element | null): HTMLElement | null => {
+      if (!element) return null;
+      // Find zoomable elements: images, mermaid SVGs, PDF iframes
+      return element.closest('.embed-image img, .mermaid-diagram svg, .embed-pdf iframe') as HTMLElement | null;
+    };
+
+    const applyScale = (target: HTMLElement, scale: number): void => {
+      const clampedScale = Math.max(0.5, Math.min(3, scale));
+      target.style.transform = `scale(${clampedScale})`;
+      target.style.transformOrigin = 'center center';
+      target.classList.add('pinch-zoom-active');
+    };
+
+    const resetScale = (target: HTMLElement): void => {
+      target.style.transform = '';
+      target.classList.remove('pinch-zoom-active');
+    };
+
+    container.addEventListener('touchstart', (event: TouchEvent) => {
+      if (event.touches.length === 2) {
+        const target = findPinchTarget(event.target as Element);
+        if (target) {
+          pinchState.isPinching = true;
+          pinchState.initialDistance = getDistance(event.touches[0], event.touches[1]);
+          pinchState.target = target;
+          // Get current scale if already zoomed
+          const transform = target.style.transform;
+          const match = transform.match(/scale\(([\d.]+)\)/);
+          pinchState.initialScale = match ? parseFloat(match[1]) : 1;
+          event.preventDefault();
+        }
+      }
+    }, { passive: false });
+
+    container.addEventListener('touchmove', (event: TouchEvent) => {
+      if (pinchState.isPinching && event.touches.length === 2 && pinchState.target) {
+        const distance = getDistance(event.touches[0], event.touches[1]);
+        const scale = pinchState.initialScale * (distance / pinchState.initialDistance);
+        applyScale(pinchState.target, scale);
+        event.preventDefault();
+      }
+    }, { passive: false });
+
+    container.addEventListener('touchend', (event: TouchEvent) => {
+      if (pinchState.isPinching) {
+        pinchState.isPinching = false;
+        pinchState.target = null;
+      }
+    });
+
+    container.addEventListener('touchcancel', () => {
+      if (pinchState.isPinching && pinchState.target) {
+        resetScale(pinchState.target);
+      }
+      pinchState.isPinching = false;
+      pinchState.target = null;
+    });
+
+    // Double-tap to reset zoom on pinch-zoom elements
+    let lastTap = 0;
+    container.addEventListener('touchend', (event: TouchEvent) => {
+      if (event.changedTouches.length === 1) {
+        const target = findPinchTarget(event.target as Element);
+        if (target && target.classList.contains('pinch-zoom-active')) {
+          const now = Date.now();
+          if (now - lastTap < 300) {
+            // Double-tap detected - reset zoom
+            resetScale(target);
+            event.preventDefault();
+          }
+          lastTap = now;
+        }
+      }
+    });
   }
 
   destroy(dom: HTMLElement): void {
@@ -255,7 +414,7 @@ export class RenderedMarkdownDocumentWidget extends WidgetType {
     public readonly content: string,
     public readonly blocks: SplitBlock[],
     public readonly frontmatterLabel: string,
-    public readonly setActiveBlock: any,
+    public readonly setFocusedBlock: any,
     public readonly renderPlugins?: { remark?: any[]; rehype?: any[] }
   ) {
     super();
@@ -272,17 +431,24 @@ export class RenderedMarkdownDocumentWidget extends WidgetType {
     const container = document.createElement('div');
     container.className = 'cm-live-rendered-block cm-live-full-document';
 
+    // Add touch event listeners for pinch zoom on images, diagrams, PDFs
+    this.addTouchListeners(container);
+
     container.addEventListener('mousedown', (event) => {
       const block = this.blockFromEventTarget(container, event.target);
       if (!block) return;
 
-      event.preventDefault();
-      event.stopPropagation();
+      // Don't preventDefault - allow text selection
+      // Don't stopPropagation - let click handler handle double-click detection
 
       const position = cursorPositionFromClick(view, event, block.from, block.to);
       view.dispatch({
         selection: { anchor: position },
-        effects: this.setActiveBlock.of(activeBlockRange(block)),
+        effects: this.setFocusedBlock.of({
+          from: block.from,
+          to: block.to,
+          sourceTo: block.sourceTo,
+        }),
         scrollIntoView: true,
       });
       requestLivePreviewMeasure(view);
@@ -303,6 +469,92 @@ export class RenderedMarkdownDocumentWidget extends WidgetType {
     return false;
   }
 
+  private addTouchListeners(container: HTMLElement): void {
+    let pinchState = {
+      isPinching: false,
+      initialDistance: 0,
+      initialScale: 1,
+      target: null as HTMLElement | null,
+    };
+
+    const getDistance = (touch1: Touch, touch2: Touch): number => {
+      const dx = touch1.clientX - touch2.clientX;
+      const dy = touch1.clientY - touch2.clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+
+    const findPinchTarget = (element: Element | null): HTMLElement | null => {
+      if (!element) return null;
+      return element.closest('.embed-image img, .mermaid-diagram svg, .embed-pdf iframe') as HTMLElement | null;
+    };
+
+    const applyScale = (target: HTMLElement, scale: number): void => {
+      const clampedScale = Math.max(0.5, Math.min(3, scale));
+      target.style.transform = `scale(${clampedScale})`;
+      target.style.transformOrigin = 'center center';
+      target.classList.add('pinch-zoom-active');
+    };
+
+    const resetScale = (target: HTMLElement): void => {
+      target.style.transform = '';
+      target.classList.remove('pinch-zoom-active');
+    };
+
+    container.addEventListener('touchstart', (event: TouchEvent) => {
+      if (event.touches.length === 2) {
+        const target = findPinchTarget(event.target as Element);
+        if (target) {
+          pinchState.isPinching = true;
+          pinchState.initialDistance = getDistance(event.touches[0], event.touches[1]);
+          pinchState.target = target;
+          const transform = target.style.transform;
+          const match = transform.match(/scale\(([\d.]+)\)/);
+          pinchState.initialScale = match ? parseFloat(match[1]) : 1;
+          event.preventDefault();
+        }
+      }
+    }, { passive: false });
+
+    container.addEventListener('touchmove', (event: TouchEvent) => {
+      if (pinchState.isPinching && event.touches.length === 2 && pinchState.target) {
+        const distance = getDistance(event.touches[0], event.touches[1]);
+        const scale = pinchState.initialScale * (distance / pinchState.initialDistance);
+        applyScale(pinchState.target, scale);
+        event.preventDefault();
+      }
+    }, { passive: false });
+
+    container.addEventListener('touchend', (event: TouchEvent) => {
+      if (pinchState.isPinching) {
+        pinchState.isPinching = false;
+        pinchState.target = null;
+      }
+    });
+
+    container.addEventListener('touchcancel', () => {
+      if (pinchState.isPinching && pinchState.target) {
+        resetScale(pinchState.target);
+      }
+      pinchState.isPinching = false;
+      pinchState.target = null;
+    });
+
+    let lastTap = 0;
+    container.addEventListener('touchend', (event: TouchEvent) => {
+      if (event.changedTouches.length === 1) {
+        const target = findPinchTarget(event.target as Element);
+        if (target && target.classList.contains('pinch-zoom-active')) {
+          const now = Date.now();
+          if (now - lastTap < 300) {
+            resetScale(target);
+            event.preventDefault();
+          }
+          lastTap = now;
+        }
+      }
+    });
+  }
+
   blockFromEventTarget(container: HTMLElement, target: EventTarget | null): SplitBlock | null {
     const preview = container.querySelector('.markdown-preview');
     if (!preview || !(target instanceof Element)) {
@@ -320,7 +572,7 @@ export class RenderedMarkdownDocumentWidget extends WidgetType {
 
   renderContent(): React.ReactElement {
     const { frontmatter, body } = splitFrontmatter(this.content);
-    const { remarkPlugins, rehypePlugins } = this.renderPlugins ?? {};
+    const { remark: remarkPlugins, rehype: rehypePlugins } = this.renderPlugins ?? {};
 
     return React.createElement('article', { className: 'markdown-preview cm-live-rendered-preview' },
       frontmatter

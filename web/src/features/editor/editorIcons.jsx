@@ -22,6 +22,7 @@ import {
   Save,
   Sigma,
   Strikethrough,
+  GitBranch,
 } from 'lucide-react';
 
 export function getGroupIcon(name) {
@@ -68,6 +69,7 @@ export function getCommandIcon(id) {
     blockMath: <Sigma size={16} aria-hidden="true" />,
     footnote: null,
     metadata: <Braces size={16} aria-hidden="true" />,
+    mermaid: <GitBranch size={16} aria-hidden="true" />,
   };
   return icons[id] || null;
 }

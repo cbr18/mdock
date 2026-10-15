@@ -11,6 +11,7 @@ import { DashboardPage } from './pages/DashboardPage.jsx';
 const AccountPage = lazy(() => import('./pages/AccountPage.jsx').then((module) => ({ default: module.AccountPage })));
 const AdminUsersPage = lazy(() => import('./pages/AdminUsersPage.jsx').then((module) => ({ default: module.AdminUsersPage })));
 const VaultPage = lazy(() => import('./pages/VaultPage.jsx').then((module) => ({ default: module.VaultPage })));
+const PdfViewerPage = lazy(() => import('./pages/PdfViewerPage.jsx').then((module) => ({ default: module.PdfViewerPage })));
 
 export default function App() {
   return (
@@ -103,6 +104,11 @@ function AppContent() {
     return { name: 'dashboard' };
   }
 
+  // Handle embed routes (PDF viewer, etc.) - these don't need auth/app shell
+  if (page.name === 'embed-pdf') {
+    return <PdfViewerPage />;
+  }
+
   if (loading) {
     return <main className="app-shell" aria-busy="true" />;
   }
@@ -134,6 +140,14 @@ function AppContent() {
 }
 
 function pageFromLocation() {
+  // Check for embed routes first (path-based)
+  if (window.location.pathname.startsWith('/embed/')) {
+    if (window.location.pathname === '/embed/pdf') {
+      return { name: 'embed-pdf' };
+    }
+    return { name: 'dashboard' };
+  }
+
   const params = new URLSearchParams(window.location.search);
   const name = params.get('page') || 'dashboard';
   if (name === 'vault') {

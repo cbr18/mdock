@@ -81,14 +81,159 @@ export function rangesIntersect(leftFrom: number, leftTo: number, rightFrom: num
 }
 
 /**
+ * Extended wikilink match with heading/block references
+ */
+export interface WikilinkMatch {
+  pagePath: string;
+  alias: string | null;
+  fullMatch: string;
+  headingRef?: string;
+  blockRef?: string;
+}
+
+/**
+ * Find wikilinks in text
+ * Supports: [[Page]], [[Page|Alias]], [[Page#Heading]], [[Page#^block-id]], [[Page#Heading|Alias]]
+ */
+export function findWikilinks(text: string): WikilinkMatch[] {
+  const matches: WikilinkMatch[] = [];
+  // Regex captures: pagePath (with optional #heading or #^block), alias
+  const regex = /\[\[([^\|\]]+?)(?:#([^\|\]]+))?(?:\|([^\]]+))?\]\]/g;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const pagePath = match[1];
+    const ref = match[2]; // heading or ^block-id
+    const alias = match[3] || null;
+    
+    let headingRef: string | undefined;
+    let blockRef: string | undefined;
+    
+    if (ref) {
+      if (ref.startsWith('^')) {
+        blockRef = ref.slice(1);
+      } else {
+        headingRef = ref;
+      }
+    }
+    
+    matches.push({
+      pagePath,
+      alias,
+      fullMatch: match[0],
+      headingRef,
+      blockRef,
+    });
+  }
+  return matches;
+}
+
+/**
+ * Process wikilinks in markdown and convert to React elements with click handlers
+ * Handles [[Page]], [[Page|Alias]], [[Page#Heading]], [[Page#^block-id]], [[Page#Heading|Alias]]
+ */
+export function processWikilinks(
+  markdown: string,
+  onWikilinkClick: (pagePath: string, alias: string | null, headingRef?: string, blockRef?: string) => void
+): React.ReactNode {
+  const matches: WikilinkMatch[] = [];
+  const regex = /\[\[([^\|\]]+?)(?:#([^\|\]]+))?(?:\|([^\]]+))?\]\]/g;
+  let match;
+  while ((match = regex.exec(markdown)) !== null) {
+    const pagePath = match[1];
+    const ref = match[2];
+    const alias = match[3] || null;
+    
+    let headingRef: string | undefined;
+    let blockRef: string | undefined;
+    
+    if (ref) {
+      if (ref.startsWith('^')) {
+        blockRef = ref.slice(1);
+      } else {
+        headingRef = ref;
+      }
+    }
+    
+    matches.push({
+      pagePath,
+      alias,
+      fullMatch: match[0],
+      headingRef,
+      blockRef,
+    });
+  }
+
+  if (matches.length === 0) {
+    // No wikilinks, render normally
+    return React.createElement(ReactMarkdown, {}, markdown);
+  }
+
+  // Split markdown by wikilinks and create elements
+  const elements: React.ReactNode[] = [];
+  let lastIndex = 0;
+
+  for (const match of matches) {
+    const matchIndex = markdown.indexOf(match.fullMatch, lastIndex);
+    if (matchIndex > lastIndex) {
+      const beforeText = markdown.slice(lastIndex, matchIndex);
+      if (beforeText) {
+        elements.push(beforeText);
+      }
+    }
+
+    // Build display text
+    let displayText = match.alias || match.pagePath;
+    if (match.headingRef) {
+      displayText = match.alias || `${match.pagePath} > ${match.headingRef}`;
+    } else if (match.blockRef) {
+      displayText = match.alias || `${match.pagePath} > ^${match.blockRef}`;
+    }
+
+    // Add the wikilink as an interactive element
+    elements.push(
+      React.createElement(
+        'a',
+        {
+          className: 'cm-wikilink',
+          href: '#',
+          'data-page-path': match.pagePath,
+          'data-heading-ref': match.headingRef || '',
+          'data-block-ref': match.blockRef || '',
+          onClick: (e: React.MouseEvent<HTMLAnchorElement>) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const isNavigation = (window.navigator.platform.includes('Mac') ? e.metaKey : e.ctrlKey);
+            if (isNavigation) {
+              onWikilinkClick(match.pagePath, match.alias, match.headingRef, match.blockRef);
+            }
+          }
+        },
+        displayText
+      )
+    );
+
+    lastIndex = matchIndex + match.fullMatch.length;
+  }
+
+  // Add remaining text
+  if (lastIndex < markdown.length) {
+    elements.push(markdown.slice(lastIndex));
+  }
+
+  return React.createElement('span', {}, ...elements);
+}
+
+/**
  * Widget for rendering a single markdown block
  */
 export class RenderedMarkdownBlockWidget extends WidgetType {
   constructor(
     public readonly block: SplitBlock,
     public readonly frontmatterLabel: string,
+    public readonly setFocusedBlock: any,
     public readonly setActiveBlock: any,
-    public readonly renderPlugins?: { remark?: any[]; rehype?: any[] }
+    public readonly renderPlugins?: { remark?: any[]; rehype?: any[] },
+    public readonly isFocused: boolean = false
   ) {
     super();
   }
@@ -97,25 +242,39 @@ export class RenderedMarkdownBlockWidget extends WidgetType {
     return (
       other.block.markdown === this.block.markdown &&
       other.block.type === this.block.type &&
-      other.frontmatterLabel === this.frontmatterLabel
+      other.frontmatterLabel === this.frontmatterLabel &&
+      other.isFocused === this.isFocused
     );
   }
 
   toDOM(view: EditorView): HTMLElement {
     const container = document.createElement('div');
     container.className = `cm-live-rendered-block cm-live-rendered-${this.block.type}`;
+    if (this.isFocused) {
+      container.classList.add('cm-live-focused-block');
+    }
 
+    // Add block ID as data attribute for block reference targeting
+    if (this.block.blockId) {
+      container.setAttribute('data-block-id', this.block.blockId);
+    }
+
+    // Single click handler - set focused block (cursor position without edit mode)
     container.addEventListener('mousedown', (event) => {
       if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
         return;
       }
-      event.preventDefault();
-      event.stopPropagation();
+      // Don't preventDefault - allow text selection
+      // Don't stopPropagation - let click handler handle double-click detection
 
       const position = cursorPositionFromClick(view, event, this.block.from, this.block.to);
       view.dispatch({
         selection: { anchor: position },
-        effects: this.setActiveBlock.of(activeBlockRange(this.block)),
+        effects: this.setFocusedBlock.of({
+          from: this.block.from,
+          to: this.block.to,
+          sourceTo: this.block.sourceTo,
+        }),
         scrollIntoView: true,
       });
       requestLivePreviewMeasure(view);
@@ -147,12 +306,10 @@ export class RenderedMarkdownBlockWidget extends WidgetType {
       );
     }
 
-    return React.createElement('article', { className: 'markdown-preview cm-live-rendered-preview' },
-      React.createElement(ReactMarkdown, {
-        remarkPlugins: renderPlugins?.remark,
-        rehypePlugins: renderPlugins?.rehype,
-      }, block.markdown)
-    );
+    // Process wikilinks in the markdown content
+    return processWikilinks(block.markdown, (pagePath, alias) => {
+      // Click handler for wikilinks - navigation will be handled by the widget
+    });
   }
 }
 
@@ -164,7 +321,7 @@ export class RenderedMarkdownDocumentWidget extends WidgetType {
     public readonly content: string,
     public readonly blocks: SplitBlock[],
     public readonly frontmatterLabel: string,
-    public readonly setActiveBlock: any,
+    public readonly setFocusedBlock: any,
     public readonly renderPlugins?: { remark?: any[]; rehype?: any[] }
   ) {
     super();
@@ -185,13 +342,17 @@ export class RenderedMarkdownDocumentWidget extends WidgetType {
       const block = this.blockFromEventTarget(container, event.target);
       if (!block) return;
 
-      event.preventDefault();
-      event.stopPropagation();
+      // Don't preventDefault - allow text selection
+      // Don't stopPropagation - let click handler handle double-click detection
 
       const position = cursorPositionFromClick(view, event, block.from, block.to);
       view.dispatch({
         selection: { anchor: position },
-        effects: this.setActiveBlock.of(activeBlockRange(block)),
+        effects: this.setFocusedBlock.of({
+          from: block.from,
+          to: block.to,
+          sourceTo: block.sourceTo,
+        }),
         scrollIntoView: true,
       });
       requestLivePreviewMeasure(view);
@@ -229,7 +390,7 @@ export class RenderedMarkdownDocumentWidget extends WidgetType {
 
   renderContent(): React.ReactElement {
     const { frontmatter, body } = splitFrontmatter(this.content);
-    const { remarkPlugins, rehypePlugins } = this.renderPlugins ?? {};
+    const { remark: remarkPlugins, rehype: rehypePlugins } = this.renderPlugins ?? {};
 
     return React.createElement('article', { className: 'markdown-preview cm-live-rendered-preview' },
       frontmatter
@@ -274,6 +435,6 @@ export function splitFrontmatter(content: string): { frontmatter: string; body: 
   const bodyStart = content.indexOf('\n', end + 4);
   return {
     frontmatter,
-    body: bodyStart === -1 ? '' : content.slice(bodyStart + 1),
+    body: bodyStart === -1 ? '' : content.slice(bodyStart + 1)
   };
 }

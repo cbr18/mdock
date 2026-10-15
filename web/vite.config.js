@@ -33,7 +33,6 @@ export default defineConfig({
   },
   ssr: {
     external: [
-      '@codemirror/basic-setup',
       '@codemirror/state',
       '@codemirror/view',
       '@codemirror/lang-markdown',
@@ -47,13 +46,21 @@ export default defineConfig({
       '@lezer/highlight',
       '@lezer/common',
       '@uiw/react-codemirror',
+      'remark-math',
+      'rehype-katex',
+      'codemirror',
     ],
   },
   build: {
     outDir: '../webdist/dist',
     emptyOutDir: true,
     rollupOptions: {
-      external: [],
+      // Only externalize the editor library and test-specific deps
+      external: [
+        '../packages/mdock-editor',
+        'remark-math',
+        'rehype-katex',
+      ],
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
@@ -94,9 +101,8 @@ export default defineConfig({
     exclude: ['src/lib/editor/**'],
     deps: {
       external: [
-        'react',
-        'react-dom',
-        'react-dom/client',
+        'remark-math',
+        'rehype-katex',
       ],
     },
     optimizeDeps: {

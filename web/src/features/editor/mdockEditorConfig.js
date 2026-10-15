@@ -3,7 +3,7 @@
  * This file connects the library with mdock's infrastructure (i18n, theme, plugins, etc.)
  */
 
-import { livePreviewExtension } from '@mdock/editor';
+import { livePreviewExtension, remarkCallout, rehypeCallout, remarkEmbed, rehypeEmbed, remarkMermaid, rehypeMermaid } from '@mdock/editor';
 import { markdownRemarkPlugins, markdownRehypePlugins, splitFrontmatter } from '../files/MarkdownPreview.jsx';
 
 /**
@@ -13,8 +13,8 @@ import { markdownRemarkPlugins, markdownRehypePlugins, splitFrontmatter } from '
 export const mdockLivePreviewConfig = {
   frontmatterLabel: 'Frontmatter', // Will be overridden by i18n in MarkdownEditor.jsx
   renderPlugins: {
-    remark: markdownRemarkPlugins,
-    rehype: markdownRehypePlugins,
+    remark: [...markdownRemarkPlugins, remarkCallout, remarkEmbed, remarkMermaid],
+    rehype: [...markdownRehypePlugins, rehypeCallout, rehypeEmbed, rehypeMermaid],
   },
   // Block splitter uses library default (getSplitBlocks)
   // Widgets use library defaults (RenderedMarkdownBlockWidget, RenderedMarkdownDocumentWidget)
@@ -48,6 +48,11 @@ export const MDOCK_COMMANDS = {
       return applyCommandToView(view, 'wikilink', values);
     },
     hasForm: true,
+    openPicker: (view, onSelect) => {
+      // Open the wikilink picker modal
+      // This will be handled by MarkdownEditor.jsx
+      // The actual picker is rendered by the adapter
+    },
   },
   embed: {
     id: 'embed',
@@ -83,6 +88,28 @@ export const MDOCK_COMMANDS = {
       return applyCommandToView(view, 'metadata');
     },
   },
+  mermaid: {
+    id: 'mermaid',
+    label: 'Mermaid Diagram',
+    icon: 'gitBranch',
+    run: (view) => {
+      const { applyCommandToView } = require('@mdock/editor');
+      return applyCommandToView(view, 'mermaid');
+    },
+  },
+  blockId: {
+    id: 'blockId',
+    label: 'Block ID',
+    icon: 'hash',
+    params: [
+      { name: 'blockId', type: 'text', label: 'Block ID', required: false, default: '' },
+    ],
+    run: (view, values) => {
+      const { applyCommandToView } = require('@mdock/editor');
+      return applyCommandToView(view, 'blockId', values);
+    },
+    hasForm: true,
+  },
 };
 
 /**
@@ -112,7 +139,7 @@ export const MDOCK_TOOLBAR_GROUPS = {
     name: 'insert',
     label: 'Insert',
     icon: 'rows2',
-    commands: ['link', 'image', 'wikilink', 'embed', 'table', 'callout', 'horizontalRule', 'inlineMath', 'blockMath', 'footnote', 'metadata'],
+    commands: ['link', 'image', 'wikilink', 'embed', 'table', 'callout', 'horizontalRule', 'inlineMath', 'blockMath', 'footnote', 'blockId', 'metadata', 'mermaid'],
   },
 };
 
@@ -130,4 +157,5 @@ export const MDOCK_PARAM_LABEL_KEYS = {
   key: 'formKey',
   value: 'formValue',
   lang: 'formLanguage',
+  blockId: 'formBlockId',
 };

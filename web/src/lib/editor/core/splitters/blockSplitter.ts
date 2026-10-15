@@ -6,6 +6,15 @@
 import type { SplitBlock, BlockType } from '../types';
 
 /**
+ * Generate a short unique ID for block references
+ * Format: block-{6-char-hash}
+ */
+function generateBlockId(): string {
+  const hash = Math.random().toString(36).substring(2, 8);
+  return `block-${hash}`;
+}
+
+/**
  * Check if a line is blank (empty or whitespace only)
  */
 export function isBlank(line: string): boolean {
@@ -94,12 +103,13 @@ export function createBlock(
   lines: string[],
   starts: number[],
   startLine: number,
-  endLine: number
+  endLine: number,
+  existingBlockId?: string
 ): SplitBlock {
   const from = starts[startLine];
   const to = starts[endLine] + lines[endLine].length;
   const markdown = lines.slice(startLine, endLine + 1).join('\n');
-  return { type, from, to, sourceTo: to, markdown };
+  return { type, from, to, sourceTo: to, markdown, blockId: existingBlockId ?? generateBlockId() };
 }
 
 /**

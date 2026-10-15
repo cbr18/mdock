@@ -169,6 +169,9 @@ function executeCommand(
     case 'footnote':
       dispatch(insertFootnote(state, values.id || '1', values.text || ''));
       break;
+    case 'blockId':
+      dispatch(insertBlockId(state, values.blockId || ''));
+      break;
     case 'metadata':
       dispatch(ensureFrontmatter(state, values));
       break;
@@ -336,6 +339,22 @@ function insertFootnote(state: any, id = '1', text = '') {
   return replaceSelection(state, `${selection.value}${reference}${definition}`, selection.end + reference.length + 2, selection.end + reference.length + 2 + text.length);
 }
 
+function insertBlockId(state: any, blockId = '') {
+  const selection = selectedText(state);
+  // Generate a new block ID if not provided
+  const id = blockId || `block-${Math.random().toString(36).substring(2, 8)}`;
+  const blockIdMarker = `^${id}`;
+  
+  if (selection.value.length > 0) {
+    // If there's a selection, wrap it with a wikilink to the block ID
+    const value = `[[#${blockIdMarker}|${selection.value}]]`;
+    return replaceSelection(state, value, selection.start + 2, selection.start + 2 + selection.value.length);
+  }
+  
+  // Otherwise insert the block ID marker at cursor position
+  return replaceSelection(state, blockIdMarker, selection.start + blockIdMarker.length, selection.start + blockIdMarker.length);
+}
+
 function toggleComment(state: any) {
   return toggleInlineMark(state, '%%');
 }
@@ -450,3 +469,5 @@ function formatYamlValue(value: any) {
   if (typeof value === 'boolean' || typeof value === 'number') return String(value);
   return JSON.stringify(String(value));
 }
+
+export { insertBlockId };

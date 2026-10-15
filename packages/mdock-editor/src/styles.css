@@ -335,6 +335,78 @@
   line-height: 1.62;
 }
 
+/* Focused block (single-clicked, cursor placed but not in edit mode) */
+.cm-live-rendered-block.cm-live-focused-block {
+  outline: none;
+  border-radius: 4px;
+  background: var(--accent-bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+  transition: background 100ms ease, box-shadow 100ms ease;
+}
+
+/* Hover indicator for rendered blocks */
+.cm-live-rendered-block:not(.cm-live-focused-block):hover {
+  border-radius: 4px;
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 1px var(--border);
+  transition: background 100ms ease, box-shadow 100ms ease;
+}
+
+/* Block ID indicator (optional gutter badge) */
+.cm-live-rendered-block[data-block-id]::before {
+  content: attr(data-block-id);
+  display: inline-block;
+  position: absolute;
+  left: -80px;
+  top: 0;
+  width: 70px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-align: right;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cm-live-rendered-block[data-block-id]:hover::before,
+.cm-live-rendered-block.cm-live-focused-block[data-block-id]::before {
+  opacity: 0.7;
+}
+
+/* Ensure text selection works in rendered blocks */
+.cm-live-rendered-block .markdown-preview ::selection {
+  background: var(--selection);
+}
+
+/* Focus styles for keyboard navigation */
+.cm-live-rendered-block:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Focus visible for interactive elements inside rendered blocks */
+.cm-live-rendered-block a:focus-visible,
+.cm-live-rendered-block button:focus-visible,
+.cm-live-rendered-block [tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Selection highlight in live preview */
+.cm-live-preview .cm-selectionLayer .cm-selectionBackground {
+  background: var(--selection);
+}
+
 .cm-live-rendered-block .markdown-preview {
   width: 100%;
   max-width: none;
@@ -459,21 +531,13 @@
 .live-document-view .markdown-editor-shell {
   height: 100%;
   min-height: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-subtle);
   overflow: hidden;
 }
 
 .live-document-view .markdown-editor-shell .cm-editor {
   height: 100%;
   min-height: 0;
-  border-radius: var(--radius-sm);
   overflow: hidden;
-}
-
-.live-document-view .markdown-editor-shell .cm-scroller {
-  border-radius: var(--radius-sm);
 }
 
 .live-document-view .editor-toolbar {
@@ -635,4 +699,1409 @@
 .empty-preview {
   padding: 20px 24px;
   color: var(--text-muted);
+}
+
+/* ==========================================================================
+   Callout Component
+   ========================================================================== */
+
+/* Base callout container */
+.callout {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 0;
+  border-radius: var(--callout-radius, var(--radius));
+  border: 1px solid var(--callout-border, var(--border));
+  background: var(--callout-bg, var(--surface-2));
+  color: var(--callout-text, var(--text));
+  overflow: hidden;
+  transition: background-color var(--duration-fast, 150ms) var(--ease-out),
+              border-color var(--duration-fast, 150ms) var(--ease-out);
+}
+
+/* Hover state */
+.callout:hover {
+  background: var(--callout-bg-hover, var(--surface-hover));
+}
+
+/* Focus ring for keyboard navigation to fold button */
+.callout:focus-within .callout-fold-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+/* Header row: icon + title + fold button */
+.callout-header {
+  display: flex;
+  align-items: center;
+  gap: var(--callout-gap, var(--space-3));
+  padding: var(--callout-padding, var(--space-4)) var(--callout-padding, var(--space-4)) 0;
+  min-height: 44px; /* 2.5.8 target size */
+}
+
+/* Icon */
+.callout-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--callout-icon-size, 20px);
+  height: var(--callout-icon-size, 20px);
+  color: var(--callout-icon, var(--text-muted));
+  flex-shrink: 0;
+}
+
+.callout-icon svg {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Title area */
+.callout-title-area {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--callout-title-gap, var(--space-2));
+  min-width: 0; /* allow text truncation */
+}
+
+.callout-title {
+  margin: 0;
+  font-size: var(--markdown-font-size, 16px);
+  font-weight: 600;
+  line-height: 1.3;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Fold button */
+.callout-fold-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--callout-fold-btn-size, 24px);
+  height: var(--callout-fold-btn-size, 24px);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--callout-icon, var(--text-muted));
+  cursor: pointer;
+  transition: background-color var(--duration-fast, 150ms) var(--ease-out),
+              color var(--duration-fast, 150ms) var(--ease-out);
+}
+
+.callout-fold-btn:hover {
+  background: color-mix(in srgb, var(--callout-icon, var(--text-muted)) 12%, transparent);
+}
+
+.callout-fold-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
+
+.callout-fold-btn .fold-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  transition: transform var(--duration-normal, 200ms) var(--ease-emphasized);
+}
+
+/* Folded state: rotate icon */
+.callout-folded .callout-fold-btn .fold-icon {
+  transform: rotate(-90deg);
+}
+
+/* Content area */
+.callout-content {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--duration-normal, 200ms) var(--ease-emphasized);
+}
+
+.callout-content > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Folded: collapse content */
+.callout-folded .callout-content {
+  grid-template-rows: 0fr;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .callout-content,
+  .callout-fold-btn .fold-icon {
+    transition: none !important;
+  }
+}
+
+/* Callout content markdown rendering */
+.callout-content .markdown-preview {
+  margin: 0;
+  padding: 0 var(--callout-padding, var(--space-4)) var(--callout-padding, var(--space-4));
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  max-width: none;
+  width: 100%;
+  font-size: var(--markdown-font-size, 16px);
+  line-height: 1.62;
+}
+
+/* Nested callouts */
+.callout-content .callout {
+  margin: var(--space-3) calc(var(--space-3) * -1);
+  border-radius: 0;
+  border-left-width: 3px;
+  border-right-width: 0;
+  border-top-width: 0;
+  border-bottom-width: 0;
+}
+
+.callout-content .callout:first-child {
+  margin-top: 0;
+}
+
+.callout-content .callout:last-child {
+  margin-bottom: 0;
+}
+
+/* ==========================================================================
+   Callout Type Variants
+   ========================================================================== */
+
+/* Note */
+.callout[data-callout-type="note"] {
+  --callout-border: var(--callout-note-border, var(--color-blue-500));
+  --callout-bg: var(--callout-note-bg);
+  --callout-bg-hover: var(--callout-note-bg-hover);
+  --callout-text: var(--callout-note-text);
+  --callout-icon: var(--callout-note-icon);
+}
+
+/* Info */
+.callout[data-callout-type="info"] {
+  --callout-border: var(--callout-info-border, var(--color-cyan-500));
+  --callout-bg: var(--callout-info-bg);
+  --callout-bg-hover: var(--callout-info-bg-hover);
+  --callout-text: var(--callout-info-text);
+  --callout-icon: var(--callout-info-icon);
+}
+
+/* Tip */
+.callout[data-callout-type="tip"] {
+  --callout-border: var(--callout-tip-border, var(--color-amber-500));
+  --callout-bg: var(--callout-tip-bg);
+  --callout-bg-hover: var(--callout-tip-bg-hover);
+  --callout-text: var(--callout-tip-text);
+  --callout-icon: var(--callout-tip-icon);
+}
+
+/* Warning */
+.callout[data-callout-type="warning"] {
+  --callout-border: var(--callout-warning-border, var(--color-orange-500));
+  --callout-bg: var(--callout-warning-bg);
+  --callout-bg-hover: var(--callout-warning-bg-hover);
+  --callout-text: var(--callout-warning-text);
+  --callout-icon: var(--callout-warning-icon);
+}
+
+/* Danger */
+.callout[data-callout-type="danger"] {
+  --callout-border: var(--callout-danger-border, var(--color-red-500));
+  --callout-bg: var(--callout-danger-bg);
+  --callout-bg-hover: var(--callout-danger-bg-hover);
+  --callout-text: var(--callout-danger-text);
+  --callout-icon: var(--callout-danger-icon);
+}
+
+/* Success */
+.callout[data-callout-type="success"] {
+  --callout-border: var(--callout-success-border, var(--color-green-500));
+  --callout-bg: var(--callout-success-bg);
+  --callout-bg-hover: var(--callout-success-bg-hover);
+  --callout-text: var(--callout-success-text);
+  --callout-icon: var(--callout-success-icon);
+}
+
+/* Question */
+.callout[data-callout-type="question"] {
+  --callout-border: var(--callout-question-border, var(--color-violet-500));
+  --callout-bg: var(--callout-question-bg);
+  --callout-bg-hover: var(--callout-question-bg-hover);
+  --callout-text: var(--callout-question-text);
+  --callout-icon: var(--callout-question-icon);
+}
+
+/* Custom types via CSS */
+.callout[data-callout-type^="custom-"] {
+  /* User defines --callout-border, --callout-bg, etc. in their CSS */
+}
+
+/* ==========================================================================
+   Theme-specific adjustments
+   ========================================================================== */
+
+/* Dark theme (default) - already defined above with base tokens */
+
+/* Light theme */
+.theme-root[data-theme="light"] .callout[data-callout-type="note"] {
+  --callout-bg: color-mix(in srgb, var(--color-blue-500) 8%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-blue-500) 12%, transparent);
+  --callout-text: var(--color-blue-800);
+}
+
+.theme-root[data-theme="light"] .callout[data-callout-type="info"] {
+  --callout-bg: color-mix(in srgb, var(--color-cyan-500) 8%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-cyan-500) 12%, transparent);
+  --callout-text: var(--color-cyan-800);
+}
+
+.theme-root[data-theme="light"] .callout[data-callout-type="tip"] {
+  --callout-bg: color-mix(in srgb, var(--color-amber-500) 8%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-amber-500) 12%, transparent);
+  --callout-text: var(--color-amber-800);
+}
+
+.theme-root[data-theme="light"] .callout[data-callout-type="warning"] {
+  --callout-bg: color-mix(in srgb, var(--color-orange-500) 8%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-orange-500) 12%, transparent);
+  --callout-text: var(--color-orange-800);
+}
+
+.theme-root[data-theme="light"] .callout[data-callout-type="danger"] {
+  --callout-bg: color-mix(in srgb, var(--color-red-500) 8%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-red-500) 12%, transparent);
+  --callout-text: var(--color-red-800);
+}
+
+.theme-root[data-theme="light"] .callout[data-callout-type="success"] {
+  --callout-bg: color-mix(in srgb, var(--color-green-500) 8%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-green-500) 12%, transparent);
+  --callout-text: var(--color-green-800);
+}
+
+.theme-root[data-theme="light"] .callout[data-callout-type="question"] {
+  --callout-bg: color-mix(in srgb, var(--color-violet-500) 8%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-violet-500) 12%, transparent);
+  --callout-text: var(--color-violet-800);
+}
+
+/* Warm theme */
+.theme-root[data-theme="warm"] .callout[data-callout-type="note"] {
+  --callout-bg: color-mix(in srgb, var(--color-blue-500) 10%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-blue-500) 15%, transparent);
+}
+
+.theme-root[data-theme="warm"] .callout[data-callout-type="info"] {
+  --callout-bg: color-mix(in srgb, var(--color-cyan-500) 10%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-cyan-500) 15%, transparent);
+}
+
+.theme-root[data-theme="warm"] .callout[data-callout-type="tip"] {
+  --callout-bg: color-mix(in srgb, var(--color-amber-500) 10%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-amber-500) 15%, transparent);
+}
+
+.theme-root[data-theme="warm"] .callout[data-callout-type="warning"] {
+  --callout-bg: color-mix(in srgb, var(--color-orange-500) 10%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-orange-500) 15%, transparent);
+}
+
+.theme-root[data-theme="warm"] .callout[data-callout-type="danger"] {
+  --callout-bg: color-mix(in srgb, var(--color-red-500) 10%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-red-500) 15%, transparent);
+}
+
+.theme-root[data-theme="warm"] .callout[data-callout-type="success"] {
+  --callout-bg: color-mix(in srgb, var(--color-green-500) 10%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-green-500) 15%, transparent);
+}
+
+.theme-root[data-theme="warm"] .callout[data-callout-type="question"] {
+  --callout-bg: color-mix(in srgb, var(--color-violet-500) 10%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-violet-500) 15%, transparent);
+}
+
+/* Black theme */
+.theme-root[data-theme="black"] .callout[data-callout-type="note"] {
+  --callout-bg: color-mix(in srgb, var(--color-blue-500) 18%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-blue-500) 24%, transparent);
+}
+
+.theme-root[data-theme="black"] .callout[data-callout-type="info"] {
+  --callout-bg: color-mix(in srgb, var(--color-cyan-500) 18%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-cyan-500) 24%, transparent);
+}
+
+.theme-root[data-theme="black"] .callout[data-callout-type="tip"] {
+  --callout-bg: color-mix(in srgb, var(--color-amber-500) 18%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-amber-500) 24%, transparent);
+}
+
+.theme-root[data-theme="black"] .callout[data-callout-type="warning"] {
+  --callout-bg: color-mix(in srgb, var(--color-orange-500) 18%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-orange-500) 24%, transparent);
+}
+
+.theme-root[data-theme="black"] .callout[data-callout-type="danger"] {
+  --callout-bg: color-mix(in srgb, var(--color-red-500) 18%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-red-500) 24%, transparent);
+}
+
+.theme-root[data-theme="black"] .callout[data-callout-type="success"] {
+  --callout-bg: color-mix(in srgb, var(--color-green-500) 18%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-green-500) 24%, transparent);
+}
+
+.theme-root[data-theme="black"] .callout[data-callout-type="question"] {
+  --callout-bg: color-mix(in srgb, var(--color-violet-500) 18%, transparent);
+  --callout-bg-hover: color-mix(in srgb, var(--color-violet-500) 24%, transparent);
+}
+
+/* ==========================================================================
+   RTL Support
+   ========================================================================== */
+
+[dir="rtl"] .callout-header {
+  flex-direction: row-reverse;
+}
+
+[dir="rtl"] .callout-title-area {
+  flex-direction: row-reverse;
+}
+
+[dir="rtl"] .callout-fold-btn {
+  margin-left: auto;
+  margin-right: 0;
+}
+
+/* ==========================================================================
+   Embed Component
+   ========================================================================== */
+
+/* Base embed container */
+.embed {
+  border: 1px solid var(--embed-border, var(--border));
+  border-radius: var(--embed-radius, var(--radius));
+  background: var(--embed-bg, var(--surface-2));
+  overflow: hidden;
+  transition: border-color var(--duration-fast, 150ms) var(--ease-out),
+              box-shadow var(--duration-fast, 150ms) var(--ease-out);
+}
+
+.embed:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+/* ==========================================================================
+   Image Embed
+   ========================================================================== */
+
+.embed-image {
+  padding: var(--space-2);
+}
+
+.embed-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: calc(var(--embed-radius, var(--radius)) - 2px);
+  background: var(--embed-image-bg, var(--bg-subtle));
+  object-fit: var(--embed-image-object-fit, contain);
+  transition: var(--embed-image-transition, transform 150ms ease-out, box-shadow 150ms ease-out);
+}
+
+.embed-image:hover img {
+  transform: scale(var(--embed-image-hover-scale, 1.02));
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--shadow) 50%, transparent);
+}
+
+.embed-caption {
+  margin-top: var(--embed-gap, var(--space-2)) !important;
+  font-size: var(--font-size-sm, 13px) !important;
+  color: var(--text-muted) !important;
+  text-align: center;
+  padding: 0 var(--space-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   PDF Embed
+   ========================================================================== */
+
+.embed-pdf {
+  display: flex;
+  flex-direction: column;
+}
+
+.embed-pdf iframe {
+  flex: 1;
+  border: none;
+  background: var(--embed-pdf-bg, var(--bg));
+}
+
+.embed-pdf .embed-caption {
+  padding: var(--space-2) var(--space-3);
+  background: var(--embed-pdf-toolbar-bg, var(--surface-2));
+  border-top: 1px solid var(--embed-pdf-border, var(--border));
+  margin-top: 0 !important;
+  text-align: left;
+  font-weight: 500;
+}
+
+/* ==========================================================================
+   Audio/Video Embed
+   ========================================================================== */
+
+.embed-audio audio,
+.embed-video video {
+  display: block;
+  width: 100%;
+  background: var(--embed-media-bg, var(--bg));
+  border-radius: calc(var(--embed-radius, var(--radius)) - 2px);
+}
+
+.embed-audio .embed-caption,
+.embed-video .embed-caption {
+  padding: var(--space-2) var(--space-3);
+  background: var(--embed-media-controls-bg, var(--surface-2));
+  border-top: 1px solid var(--embed-border, var(--border));
+  margin-top: 0 !important;
+  text-align: left;
+}
+
+/* ==========================================================================
+   Note Embed (Transclusion)
+   ========================================================================== */
+
+.embed-note {
+  display: flex;
+  flex-direction: column;
+}
+
+.embed-note-pending .embed-note-content {
+  opacity: 0.6;
+}
+
+.embed-note-header {
+  cursor: pointer;
+  transition: background-color var(--duration-fast, 150ms) var(--ease-out);
+}
+
+.embed-note-header:hover {
+  background: var(--surface-hover);
+}
+
+.embed-note-title {
+  flex: 1;
+}
+
+.embed-note-content {
+  min-height: 60px;
+  /* Content loaded dynamically */
+}
+
+/* Loading state */
+.embed-note-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm, 13px);
+}
+
+.embed-note-loading::after {
+  content: '';
+  width: 16px;
+  height: 16px;
+  margin-left: var(--space-2);
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: embed-spin 1s linear infinite;
+}
+
+@keyframes embed-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Transcluded content */
+.embed-note-content .markdown-preview {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  max-width: none;
+}
+
+/* Nested embeds in transclusion */
+.embed-note-content .embed {
+  margin: var(--space-3) calc(var(--space-3) * -1);
+  border-radius: 0;
+  border-left-width: 2px;
+  border-right-width: 0;
+  border-top-width: 0;
+  border-bottom-width: 0;
+}
+
+/* ==========================================================================
+   Error Embed
+   ========================================================================== */
+
+.embed-error {
+  padding: var(--space-3);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.embed-error > div:last-child {
+  flex: 1;
+}
+
+/* ==========================================================================
+   Size Constraints
+   ========================================================================== */
+
+.embed[data-embed-width] {
+  /* Width set via inline style from rehype */
+}
+
+.embed[data-embed-height] {
+  /* Height set via inline style from rehype */
+}
+
+/* Responsive: max width constraints */
+.embed-image img {
+  max-width: min(100%, 800px);
+}
+
+/* PDF embed responsive */
+.embed-pdf {
+  max-width: 100%;
+}
+
+/* Video embed responsive */
+.embed-video video {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Audio embed responsive */
+.embed-audio audio {
+  max-width: 100%;
+}
+
+/* When explicit width is set, respect it but don't overflow container */
+.embed[style*="width:"] {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Percentage-based widths */
+.embed[style*="width: %"] {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* ==========================================================================
+   Lazy Loading Support
+   ========================================================================== */
+
+.embed-image img[loading="lazy"] {
+  opacity: 0;
+  transition: opacity var(--duration-normal, 200ms) var(--ease-out);
+}
+
+.embed-image img[loading="lazy"].loaded {
+  opacity: 1;
+}
+
+/* Blur-up placeholder for images */
+.embed-image {
+  position: relative;
+}
+
+.embed-image::before {
+  content: '';
+  position: absolute;
+  inset: var(--space-2);
+  background: var(--embed-image-bg, var(--bg-subtle));
+  border-radius: calc(var(--embed-radius, var(--radius)) - 2px);
+  filter: blur(20px);
+  opacity: 0.5;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.embed-image img {
+  position: relative;
+  z-index: 1;
+}
+
+.embed-image img.loaded + .embed-caption {
+  /* caption stays visible */
+}
+
+/* ==========================================================================
+   RTL Support
+   ========================================================================== */
+
+[dir="rtl"] .embed-caption {
+  text-align: center;
+}
+
+[dir="rtl"] .embed-pdf .embed-caption,
+[dir="rtl"] .embed-audio .embed-caption,
+[dir="rtl"] .embed-video .embed-caption {
+  text-align: right;
+}
+
+/* ==========================================================================
+   Reduced Motion
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .embed-image img,
+  .embed-image::before,
+  .embed-note-loading::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ==========================================================================
+   Wikilink Reference Highlight
+   ========================================================================== */
+
+.cm-ref-highlight {
+  animation: cm-ref-flash 2s ease-out;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@keyframes cm-ref-flash {
+  0% {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+    outline-color: var(--accent);
+  }
+  50% {
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    outline-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  }
+  100% {
+    background: transparent;
+    outline-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cm-ref-highlight {
+    animation: none;
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+}
+
+/* ==========================================================================
+   Mermaid Diagrams
+   ========================================================================== */
+
+/* Container for mermaid diagram with toolbar */
+.mermaid-container {
+  position: relative;
+  margin: 1em 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+/* Toolbar for mermaid controls */
+.mermaid-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.mermaid-container:hover .mermaid-toolbar,
+.mermaid-container:focus-within .mermaid-toolbar {
+  opacity: 1;
+}
+
+.mermaid-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 100ms ease, color 100ms ease, border-color 100ms ease;
+}
+
+.mermaid-toolbar-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.mermaid-toolbar-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
+
+.mermaid-toolbar-btn:active {
+  background: var(--surface-2);
+}
+
+/* Mermaid diagram rendering area */
+.mermaid-diagram {
+  position: relative;
+  min-height: 100px;
+  overflow: auto;
+  background: var(--surface-2);
+}
+
+/* Pan/zoom mode */
+.mermaid-diagram.pan-zoom-enabled {
+  cursor: grab;
+  touch-action: none;
+}
+
+.mermaid-diagram.pan-zoom-enabled:active {
+  cursor: grabbing;
+}
+
+.mermaid-diagram.pan-zoom-enabled svg {
+  transform-origin: 0 0;
+  transition: transform 0ms;
+}
+
+/* Loading state */
+.mermaid-diagram.mermaid-loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: mermaid-spin 1s linear infinite;
+}
+
+@keyframes mermaid-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Error state */
+.mermaid-diagram.mermaid-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
+  padding: 16px;
+  color: var(--danger);
+  text-align: center;
+  font-size: 13px;
+}
+
+/* Fullscreen modal */
+.mermaid-fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg) 95%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.mermaid-fullscreen-content {
+  position: relative;
+  width: 90vw;
+  height: 90vh;
+  max-width: 1200px;
+  max-height: 90vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.mermaid-fullscreen-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.mermaid-fullscreen-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mermaid-fullscreen-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 18px;
+  cursor: pointer;
+  transition: background-color 100ms ease, color 100ms ease;
+}
+
+.mermaid-fullscreen-close:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.mermaid-fullscreen-close:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
+
+.mermaid-fullscreen-body {
+  height: calc(100% - 52px);
+  overflow: auto;
+  background: var(--surface-2);
+}
+
+/* Copy notification toast */
+.mermaid-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  color: var(--text);
+  font-size: 14px;
+  animation: mermaid-toast-in 200ms ease-out;
+}
+
+@keyframes mermaid-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mermaid-toast.mermaid-toast-out {
+  animation: mermaid-toast-out 200ms ease-in forwards;
+}
+
+@keyframes mermaid-toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+
+/* Theme-specific adjustments for mermaid */
+.theme-root[data-theme="light"] .mermaid-container {
+  --mermaid-bg: var(--bg);
+  --mermaid-text: var(--text);
+}
+
+.theme-root[data-theme="dark"] .mermaid-container,
+.theme-root[data-theme="black"] .mermaid-container {
+  --mermaid-bg: var(--surface-2);
+  --mermaid-text: var(--text);
+}
+
+.theme-root[data-theme="warm"] .mermaid-container {
+  --mermaid-bg: var(--surface-2);
+  --mermaid-text: var(--text);
+}
+
+/* Ensure mermaid SVG inherits theme colors */
+.mermaid-diagram svg {
+  max-width: none;
+  width: auto;
+  height: auto;
+  background: var(--mermaid-bg, var(--surface-2));
+}
+
+/* Dark mode mermaid theme sync */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .mermaid-diagram svg {
+    background: var(--surface-2);
+  }
+}
+
+/* Print styles */
+@media print {
+  .mermaid-toolbar {
+    display: none;
+  }
+  .mermaid-container {
+    border: 1px solid var(--border);
+    page-break-inside: avoid;
+  }
+  .mermaid-diagram {
+    overflow: visible;
+  }
+}
+
+/* ==========================================================================
+   Footnotes
+   ========================================================================== */
+
+/* Footnote reference (superscript link in text) */
+.footnote-ref {
+  font-size: 0.75em;
+  vertical-align: super;
+  line-height: 0;
+}
+
+.footnote-ref-link {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--accent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+  transition: color 100ms ease, border-color 100ms ease;
+}
+
+.footnote-ref-link:hover {
+  color: var(--accent-hover, var(--accent));
+  border-bottom-color: var(--accent-hover, var(--accent));
+}
+
+.footnote-ref-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  border-radius: 2px;
+}
+
+/* Footnote reference tooltip on hover */
+.footnote-ref-link[data-footnote-tooltip]:hover::after {
+  content: attr(data-footnote-tooltip);
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(100% + 8px);
+  z-index: 1000;
+  max-width: 320px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: normal;
+  word-wrap: break-word;
+  pointer-events: none;
+  animation: footnote-tooltip-in 150ms ease-out;
+}
+
+.footnote-ref-link[data-footnote-tooltip]:hover::before {
+  content: '';
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(100% + 4px);
+  z-index: 999;
+  border: 6px solid transparent;
+  border-top-color: var(--surface);
+  pointer-events: none;
+}
+
+@keyframes footnote-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* Footnotes section at bottom */
+.footnotes {
+  margin-top: 3em;
+  padding-top: 1.5em;
+  border-top: 1px solid var(--border);
+}
+
+.footnotes-heading {
+  font-size: 0.875em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 1em;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.footnotes-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.875em;
+  line-height: 1.6;
+}
+
+.footnote-definition {
+  position: relative;
+  padding: 0.5em 0 0.5em 1.5em;
+  margin-bottom: 0.5em;
+  border-left: 2px solid var(--border);
+}
+
+.footnote-definition:last-child {
+  margin-bottom: 0;
+}
+
+.footnote-definition > *:first-child {
+  margin-top: 0;
+}
+
+.footnote-definition > *:last-child {
+  margin-bottom: 0;
+}
+
+/* Footnote backlink (↩) */
+.footnote-backlink {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.85em;
+  margin-left: 0.25em;
+  opacity: 0.6;
+  transition: opacity 100ms ease, color 100ms ease;
+}
+
+.footnote-backlink:hover {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.footnote-backlink:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  border-radius: 2px;
+}
+
+.footnote-backlink-para {
+  margin: 0.5em 0 0;
+}
+
+/* Inline footnotes */
+.footnote-inline {
+  display: inline-block;
+  margin-left: 0.25em;
+  padding: 0 0.5em;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  font-size: 0.85em;
+  color: var(--text-soft);
+  border: 1px solid var(--border);
+}
+
+/* Highlight when navigating to footnote/reference */
+.footnote-ref.cm-ref-highlight,
+.footnote-definition.cm-ref-highlight {
+  animation: footnote-highlight 2s ease-out;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@keyframes footnote-highlight {
+  0% {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    outline-color: var(--accent);
+  }
+  50% {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    outline-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  }
+  100% {
+    background: transparent;
+    outline-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .footnote-ref.cm-ref-highlight,
+  .footnote-definition.cm-ref-highlight {
+    animation: none;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+
+  .footnote-ref-link[data-footnote-tooltip]:hover::after {
+    animation: none;
+  }
+}
+
+/* RTL support */
+[dir="rtl"] .footnote-ref-link[data-footnote-tooltip]:hover::after {
+  left: auto;
+  right: 50%;
+  transform: translateX(50%);
+}
+
+[dir="rtl"] .footnote-ref-link[data-footnote-tooltip]:hover::before {
+  left: auto;
+  right: 50%;
+  transform: translateX(50%);
+}
+
+[dir="rtl"] .footnote-definition {
+  border-left: none;
+  border-right: 2px solid var(--border);
+  padding-left: 0;
+  padding-right: 1.5em;
+}
+
+/* ==========================================================================
+   Mobile Touch Support
+   ========================================================================== */
+
+/* Touch context menu animations */
+@keyframes cm-context-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cm-context-menu-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cm-touch-context-menu {
+    animation: none !important;
+  }
+}
+
+/* Touch selection handles for mobile */
+.cm-live-rendered-block ::selection {
+  background: var(--selection);
+}
+
+/* Ensure proper touch targets on interactive elements */
+.cm-live-rendered-block a,
+.cm-live-rendered-block button,
+.cm-live-rendered-block [tabindex],
+.cm-wikilink,
+.embed-image img,
+.mermaid-diagram svg,
+.embed-pdf iframe {
+  touch-action: manipulation;
+}
+
+/* Pinch zoom support */
+.embed-image img,
+.mermaid-diagram svg,
+.embed-pdf iframe {
+  touch-action: pinch-zoom;
+  transition: transform 100ms ease-out;
+}
+
+.embed-image img.pinch-zoom-active,
+.mermaid-diagram svg.pinch-zoom-active,
+.embed-pdf iframe.pinch-zoom-active {
+  touch-action: none;
+  transition: transform 0ms;
+}
+
+/* Mobile responsive toolbar */
+@media (max-width: 768px) {
+  .editor-toolbar {
+    padding: 8px 6px;
+    gap: 4px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  
+  .editor-toolbar::-webkit-scrollbar {
+    height: 6px;
+  }
+  
+  .editor-toolbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .editor-toolbar::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+  
+  .toolbar-menu {
+    flex: 0 0 auto;
+  }
+  
+  .toolbar-menu button {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 8px 12px;
+  }
+  
+  .toolbar-command {
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+  
+  .icon-text-button {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 8px 12px;
+  }
+  
+  .editor-lock-status {
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+  
+  /* Make popover full-width on mobile */
+  .toolbar-popover {
+    min-width: calc(100vw - 32px);
+    max-width: calc(100vw - 32px);
+    left: 16px !important;
+    right: 16px !important;
+  }
+}
+
+/* Mobile adjustments for live preview content */
+@media (max-width: 768px) {
+  .cm-live-preview .cm-content {
+    padding: 20px 16px;
+    font-size: var(--markdown-font-size, 16px);
+  }
+  
+  .cm-live-rendered-block {
+    min-height: 44px;
+  }
+  
+  /* Larger touch targets for checkboxes */
+  .cm-live-task-checkbox {
+    width: 24px;
+    height: 24px;
+    margin: 0 12px 0 -28px;
+  }
+  
+  /* Better spacing for list items */
+  .cm-live-list-line {
+    padding-left: 24px;
+  }
+  
+  .cm-live-bullet {
+    width: 24px;
+    margin-left: -24px;
+  }
+  
+  .cm-live-task-line {
+    padding-left: 32px;
+  }
+}
+
+/* Selection handles for mobile webkit */
+@media (pointer: coarse) {
+  .cm-live-rendered-block {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  
+  .cm-live-rendered-block .markdown-preview {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
+/* Focus visible for touch */
+@media (pointer: coarse) {
+  .cm-live-rendered-block:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 3px;
+  }
+  
+  .cm-wikilink:focus-visible,
+  .embed:focus-visible,
+  .mermaid-diagram:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
 }

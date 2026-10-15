@@ -3,7 +3,8 @@
  * Creates a CodeMirror 6 editor instance with Markdown support
  */
 
-import { EditorView, EditorState, basicSetup } from '@codemirror/basic-setup';
+import { basicSetup, EditorView } from 'codemirror';
+import { EditorState } from '@codemirror/state';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { Extension } from '@codemirror/state';
 import type { EditorConfig, EditorInstance, LivePreviewConfig } from './types';
@@ -48,6 +49,8 @@ export function createEditor(config: EditorConfig): EditorInstance {
       ...(typeof livePreview === 'object' ? livePreview : {}),
     };
     editorExtensions.push(...livePreviewExtension(lpConfig));
+    // Apply live-preview styling (font, gutters off) to the editor root
+    editorExtensions.push(EditorView.editorAttributes.of({ class: 'cm-live-preview' }));
   }
 
   // Add theme

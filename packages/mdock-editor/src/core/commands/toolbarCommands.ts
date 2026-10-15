@@ -22,6 +22,7 @@ export const PARAM_LABEL_KEYS: Record<string, string> = {
   key: 'formKey',
   value: 'formValue',
   lang: 'formLanguage',
+  blockId: 'formBlockId',
 };
 
 /** Menu mapping for command forms */
@@ -262,6 +263,16 @@ export const COMMANDS: Record<string, CommandSpec> = {
       { name: 'text', type: 'text', label: 'Footnote Text', default: '' },
     ],
     run: (view, values) => applyCommandToView(view, 'footnote', values),
+    hasForm: true,
+  },
+  blockId: {
+    id: 'blockId',
+    label: 'Block ID',
+    icon: 'hash',
+    params: [
+      { name: 'blockId', type: 'text', label: 'Block ID', required: false, default: '' },
+    ],
+    run: (view, values) => applyCommandToView(view, 'blockId', values),
     hasForm: true,
   },
   metadata: {

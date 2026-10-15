@@ -2,6 +2,7 @@ import { EditorSelection } from '@codemirror/state';
 import {
   ensureFrontmatter,
   indentLines,
+  insertBlockId,
   insertBlockMath,
   insertCallout,
   insertCodeBlock,
@@ -97,6 +98,10 @@ export const COMMANDS = {
   footnote: {
     params: [textParam('id', { default: 'note' }), textParam('text')],
     run: (state, values) => insertFootnote(state, values.id, values.text)
+  },
+  blockId: {
+    params: [textParam('blockId', { default: '' })],
+    run: (state, values) => insertBlockId(state, values.blockId)
   },
   metadata: {
     params: [textParam('key', { default: 'title' }), textParam('value')],

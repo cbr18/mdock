@@ -31,6 +31,8 @@ export interface SplitBlock {
   sourceTo: number;
   markdown: string;
   lines?: { from: number; to: number }[];
+  /** Optional unique block ID for block references (^block-id) */
+  blockId?: string;
 }
 
 /**
